@@ -27,6 +27,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 function renderAt(path: string) {
@@ -41,23 +42,24 @@ function renderAt(path: string) {
 
 describe('frontend routes', () => {
   it.each([
-    ['/login', 'Выберите роль'],
-    ['/admin', 'Администрирование'],
-    ['/teacher', 'Занятия'],
-    ['/student', 'Мои задания'],
+    ['/login', 'Выберите свою роль'],
+    ['/admin', 'Платформа под контролем'],
+    ['/teacher', 'Обучение в ваших руках'],
+    ['/student', 'Практика начинается здесь'],
   ])('renders %s directly', (path, heading) => {
     renderAt(path);
     expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
   });
 
   it.each([
-    ['администратор', 'Администрирование'],
-    ['преподаватель', 'Занятия'],
-    ['обучающийся', 'Мои задания'],
-  ])('mock login opens the %s workspace', async (label, heading) => {
+    ['администратор', 'Платформа под контролем', 'admin'],
+    ['преподаватель', 'Обучение в ваших руках', 'teacher'],
+    ['обучающийся', 'Практика начинается здесь', 'student'],
+  ])('mock login opens the %s workspace', async (label, heading, role) => {
     renderAt('/login');
     await userEvent.click(screen.getByRole('button', { name: `Войти как ${label}` }));
     expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
+    expect(window.localStorage.getItem('sirena-112:mock-role')).toBe(role);
   });
 
   it('shows a 404 for an unknown path', () => {
