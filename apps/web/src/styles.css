@@ -62,10 +62,6 @@ body { margin: 0; min-width: 320px; }
 .shell-header { background: #fff; border-bottom: 1px solid #e7ecf2; }
 .shell-header .brand__mark { width: 34px; height: 34px; border-radius: 10px; }
 .shell-header .brand__name { font-size: 19px; }
-.shell-navbar { background: #fff; border-right: 1px solid #e7ecf2; }
-.role-nav-link { min-height: 46px; border-radius: 10px; font-weight: 600; color: #52627a; }
-.role-nav-link[data-active] { background: #edf5fc; color: #2e6fa9; }
-.role-nav-link:not([data-active]):hover { background: #f6f8fb; }
 .shell-main { min-height: 100vh; background: #f7f9fc; }
 .content-wrap { max-width: 900px; margin: 0 auto; padding: 24px 0 40px; }
 .workspace-page h1 { color: #1d2c43; font-size: 31px; letter-spacing: -.04em; }
