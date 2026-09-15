@@ -41,6 +41,17 @@ def test_generated_scenario_matches_contract(client, scenario_schema):
         assert errors == [], [error.message for error in errors]
 
 
+def test_ground_truth_carries_classifier_fields(client):
+    """Эталон должен опираться на классификатор, иначе оценку нечем проверить."""
+    response = client.post("/ai/scenarios/generate", json={"count": 3, "seed": 3})
+
+    for item in response.json()["scenarios"]:
+        ground_truth = item["groundTruth"]
+        assert ground_truth["ekpCode"].isdigit()
+        assert ground_truth["signs"]["level1"]
+        assert ground_truth["incidentType"]
+
+
 def test_requested_time_limit_is_applied(client):
     response = client.post("/ai/scenarios/generate", json={"count": 1, "timeLimitSeconds": 45})
 

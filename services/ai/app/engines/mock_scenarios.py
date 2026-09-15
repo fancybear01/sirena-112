@@ -70,6 +70,12 @@ CATALOGUE: List[Dict[str, Any]] = [
         "category": Category.FIRE,
         "ground_truth": {
             "incident_type": "пожар: мусор",
+            "ekp_code": "1010101",
+            "signs": {
+                "level1": "на улице",
+                "level2": "мусор",
+                "level3": "открытое пламя",
+            },
             "address": "Москва, МЖД Киевская 1 км, д. 2, стр. 2",
             "required_services": ["Служба 101", "ДДС района"],
             "facts": {
@@ -93,6 +99,12 @@ CATALOGUE: List[Dict[str, Any]] = [
         "category": Category.FIRE,
         "ground_truth": {
             "incident_type": "задымление: мусоропровод",
+            "ekp_code": "1050602",
+            "signs": {
+                "level1": "жилой дом",
+                "level2": "мусоропровод",
+                "level3": "дым",
+            },
             "address": "Москва, ул. Берзарина, д. 21, корп. 1, под. 3",
             "required_services": ["Служба 101", "ДДС района", "МОЭК"],
             "facts": {
@@ -117,7 +129,12 @@ CATALOGUE: List[Dict[str, Any]] = [
         "title": "ДТП с троллейбусом, есть пострадавшие",
         "category": Category.ACCIDENT,
         "ground_truth": {
-            "incident_type": "ДТП: пострадавшие",
+            "incident_type": "ДТП с пострадавшими - общественный",
+            "ekp_code": "2020500",
+            "signs": {
+                "level1": "ДТП пострадавшие",
+                "level2": "Транспорт общественный",
+            },
             "address": "Москва, Волгоградский проспект в сторону области, остановка «Завод Спецэлектрод»",
             "required_services": ["Служба 103", "Служба 102", "ЦОДД", "Мосгортранс"],
             "facts": {
