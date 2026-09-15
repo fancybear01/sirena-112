@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { TeacherPage } from './TeacherPage';
@@ -49,6 +49,12 @@ describe('teacher scenario flow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
     expect(await screen.findByText('ACTIVE')).toBeInTheDocument();
+    const scenarioInfo = screen.getByRole('region', { name: 'Информация о сценарии' });
+    expect(within(scenarioInfo).getByRole('heading', { name: 'ДТП с пострадавшими' })).toBeInTheDocument();
+    expect(within(scenarioInfo).getByText('Дорожное происшествие')).toBeInTheDocument();
+    expect(within(scenarioInfo).getByText('Средняя')).toBeInTheDocument();
+    expect(within(scenarioInfo).getByText('8 мин')).toBeInTheDocument();
+    expect(within(scenarioInfo).getByText('2')).toBeInTheDocument();
     expect(screen.getByTestId('session-timer')).toHaveTextContent(/^\d{2}:\d{2}$/);
     expect(screen.getByText('Идентификатор сессии')).toBeInTheDocument();
 

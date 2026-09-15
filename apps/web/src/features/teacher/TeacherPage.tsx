@@ -230,6 +230,38 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                       {session.state}
                     </Badge>
                   </Group>
+                  {selectedScenario && (
+                    <section className="session-scenario" aria-label="Информация о сценарии">
+                      <Title order={2}>{selectedScenario.title}</Title>
+                      <Text c="dimmed" mt="xs" className="session-scenario__description">
+                        {selectedScenario.profile}
+                      </Text>
+                      <div className="session-meta">
+                        <div>
+                          <Text size="xs" c="dimmed">Категория</Text>
+                          <Text size="sm" fw={600} mt={3}>{selectedScenario.category}</Text>
+                        </div>
+                        <div>
+                          <Text size="xs" c="dimmed">Сложность</Text>
+                          <Text size="sm" fw={600} mt={3}>
+                            {difficultyLabels[selectedScenario.difficulty]}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text size="xs" c="dimmed">Лимит времени</Text>
+                          <Text size="sm" fw={600} mt={3}>
+                            {selectedScenario.timeLimitSeconds
+                              ? `${Math.round(selectedScenario.timeLimitSeconds / 60)} мин`
+                              : 'Не задан'}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text size="xs" c="dimmed">Версия</Text>
+                          <Text size="sm" fw={600} mt={3}>{selectedScenario.version}</Text>
+                        </div>
+                      </div>
+                    </section>
+                  )}
                   <Stack align="center" gap="xs" className="session-timer">
                     <IconClock size={25} stroke={1.7} aria-hidden="true" />
                     <Text className="session-timer__value" data-testid="session-timer">{timer}</Text>

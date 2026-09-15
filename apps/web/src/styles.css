@@ -119,6 +119,18 @@ body { margin: 0; min-width: 320px; }
 .session-panel { min-height: 345px; border-color: #e5eaf1; background: #fff; }
 .scenario-details h2 { color: #20334e; font-size: 24px; letter-spacing: -.03em; }
 .scenario-details__description { line-height: 1.65; }
+.session-scenario { margin-bottom: 22px; }
+.session-scenario h2 { color: #20334e; font-size: 24px; letter-spacing: -.03em; }
+.session-scenario__description { line-height: 1.55; }
+.session-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f7f9fc;
+}
 .session-timer { padding: 8px 0; color: #397cbd; }
 .session-timer__value {
   color: #20334e;
