@@ -32,12 +32,22 @@ Central, но он обходится без сетевой проблемы, п
 Проверки запуска:
 
 ```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/ready
 curl http://localhost:8080/health/live
 curl http://localhost:8080/health/ready
 curl http://localhost:8080/actuator/health
 ```
 
-Настройки берутся из окружения: `CORE_PORT`, `CORE_ENVIRONMENT` и
-`CORE_VERSION`. Все ответы имеют JSON-формат, а запросы получают
-корреляционный заголовок `X-Request-ID`; логи выводятся в JSON и включают этот
-идентификатор.
+Настройки берутся из окружения: `CORE_PORT`, `CORE_ENVIRONMENT`,
+`CORE_VERSION`, `CORE_AI_BASE_URL` и `CORE_MEDIA_BASE_URL`. Все ответы имеют
+JSON-формат, а запросы получают корреляционный заголовок `X-Request-ID`.
+При передаче `X-Session-ID` он добавляется в MDC; JSON-логи включают оба
+идентификатора.
+
+Для воспроизводимого запуска в репозитории есть Gradle Wrapper 8.8:
+
+```bash
+./gradlew test
+./gradlew bootRun
+```
