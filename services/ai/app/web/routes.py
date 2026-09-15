@@ -11,7 +11,7 @@
 from fastapi import APIRouter
 
 from app.config import SERVICE_NAME, SERVICE_VERSION, settings
-from app.engines import mock_dialogue, mock_scenarios, mock_scoring
+from app.engines import mock_scenarios, mock_scoring, rule_dialogue
 from app.schemas.common import CamelModel
 from app.schemas.dialogue import DialogueRequest, DialogueResponse
 from app.schemas.generation import ScenarioGenerateRequest, ScenarioGenerateResponse
@@ -58,7 +58,7 @@ def generate_scenarios(request: ScenarioGenerateRequest) -> ScenarioGenerateResp
 )
 def dialogue_respond(request: DialogueRequest) -> DialogueResponse:
     """Отвечает на реплику оператора в пределах фактов сценария."""
-    return mock_dialogue.respond(request)
+    return rule_dialogue.respond(request)
 
 
 @ai_router.post(
