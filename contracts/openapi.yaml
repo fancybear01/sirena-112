@@ -17,6 +17,12 @@ paths:
       responses:
         "200":
           description: Список сценариев
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scenario"
     post:
       summary: Создать черновик сценария
       responses:
@@ -25,9 +31,19 @@ paths:
   /api/teacher/sessions:
     post:
       summary: Создать учебную сессию
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
       responses:
         "201":
           description: Сессия создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
   /api/teacher/sessions/{sessionId}/start:
     post:
       summary: Запустить учебную сессию
@@ -36,6 +52,10 @@ paths:
       responses:
         "200":
           description: Сессия запущена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
   /api/teacher/sessions/{sessionId}/stop:
     post:
       summary: Завершить учебную сессию
@@ -44,6 +64,10 @@ paths:
       responses:
         "200":
           description: Сессия завершена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
   /api/teacher/sessions/{sessionId}/report:
     get:
       summary: Получить отчёт по сессии
@@ -52,6 +76,10 @@ paths:
       responses:
         "200":
           description: Отчёт сформирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionReport"
   /api/student/assignments:
     get:
       summary: Назначенные задания обучающегося
@@ -66,6 +94,10 @@ paths:
       responses:
         "200":
           description: Состояние сессии
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
   /api/student/sessions/{sessionId}/card:
     patch:
       summary: Сохранить промежуточное состояние карточки
@@ -74,6 +106,10 @@ paths:
       responses:
         "200":
           description: Карточка сохранена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
   /api/student/sessions/{sessionId}/submit:
     post:
       summary: Отправить ответ на оценивание
@@ -82,6 +118,10 @@ paths:
       responses:
         "202":
           description: Оценивание запущено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionReport"
 components:
   parameters:
     SessionId:
@@ -91,3 +131,96 @@ components:
       schema:
         type: string
         format: uuid
+  schemas:
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        scenarioId:
+          type: string
+          format: uuid
+    Session:
+      type: object
+      required: [id, scenarioId, mode, state, card]
+      properties:
+        id: { type: string, format: uuid }
+        scenarioId: { type: string, format: uuid }
+        mode: { type: string, enum: [CARD] }
+        state:
+          type: string
+          enum: [CREATED, READY, RINGING, ACTIVE, COMPLETED, SCORING, SCORED, FAILED]
+        card:
+          $ref: "#/components/schemas/OperatorCard"
+        report:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/SessionReport"
+    OperatorCard:
+      type: object
+      properties:
+        incidentType: { type: string, nullable: true }
+        signs:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/IncidentSigns"
+        address: { type: string, nullable: true }
+        requiredServices:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        facts:
+          type: object
+    IncidentSigns:
+      type: object
+      required: [level1]
+      properties:
+        level1: { type: string }
+        level2: { type: string, nullable: true }
+        level3: { type: string, nullable: true }
+        additional:
+          type: array
+          items: { type: string }
+    Scenario:
+      type: object
+      required: [id, version, title, category, difficulty, profile, groundTruth, rubric]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        title: { type: string }
+        category: { type: string }
+        difficulty: { type: string, enum: [BASIC, INTERMEDIATE, ADVANCED] }
+        profile: { type: string }
+        timeLimitSeconds: { type: integer, minimum: 1 }
+        groundTruth: { type: object }
+        rubric: { type: object }
+    SessionReport:
+      type: object
+      required: [sessionId, score, maxScore, passed, criteria, errors, recommendations]
+      properties:
+        sessionId: { type: string, format: uuid }
+        score: { type: number }
+        maxScore: { type: number }
+        passed: { type: boolean }
+        criteria:
+          type: array
+          items:
+            type: object
+            required: [code, passed, points, maxPoints, message]
+            properties:
+              code: { type: string }
+              passed: { type: boolean }
+              points: { type: number }
+              maxPoints: { type: number }
+              message: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+              field: { type: string, nullable: true }
+        recommendations:
+          type: array
+          items: { type: string }

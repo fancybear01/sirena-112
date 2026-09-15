@@ -49,15 +49,22 @@ interface SessionEventRepository {
 }
 
 class InMemorySessionEventRepository : SessionEventRepository {
-    private val events = ConcurrentHashMap<UUID, SessionEvent>()
+    /** Linked map keeps append order when several events share the same Instant. */
+    private val events = LinkedHashMap<UUID, SessionEvent>()
 
-    override fun saveIfAbsent(event: SessionEvent): Boolean = events.putIfAbsent(event.eventId, event) == null
+    @Synchronized
+    override fun saveIfAbsent(event: SessionEvent): Boolean {
+        if (events.containsKey(event.eventId)) return false
+        events[event.eventId] = event
+        return true
+    }
 
+    @Synchronized
     override fun findById(eventId: UUID): SessionEvent? = events[eventId]
 
+    @Synchronized
     override fun findBySessionId(sessionId: UUID): List<SessionEvent> = events.values
         .asSequence()
         .filter { it.sessionId == sessionId }
-        .sortedBy { it.timestamp }
         .toList()
 }
