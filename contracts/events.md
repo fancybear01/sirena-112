@@ -47,6 +47,11 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 | `score.completed` | core | teacher, student |
 | `system.error` | any | core |
 
+`transcript.*` фактически формирует Python AI, но наружу в Core его публикует
+Media, поэтому в конверте используется `source: "media"`. `eventId` создаёт
+Media; в `payload` передаются `aiSessionId`, текст, признак финальности и
+временные границы фразы. Python не отправляет эти события в Core напрямую.
+
 ## Команды Core -> Media
 
 - `call.start`
@@ -55,3 +60,7 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 - `speech.cancel`
 - `recording.start`
 - `recording.stop`
+
+Команда `call.start` должна содержать как минимум `sessionId`, `aiSessionId` и
+SIP-адрес назначения. `aiSessionId` предварительно получает Core при создании
+AI-сессии.
