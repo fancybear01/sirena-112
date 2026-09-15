@@ -1,0 +1,45 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Kotlin / Gradle
+.gradle/
+build/
+out/
+*.class
+
+# Node / frontend
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Go
+bin/
+*.test
+
+# Runtime data
+data/
+models/
+recordings/
+logs/
+backups/
+tmp/

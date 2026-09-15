@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: Sirena-112 Core API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/auth/login:
+    post:
+      summary: Вход пользователя
+      responses:
+        "200":
+          description: Пользователь аутентифицирован
+  /api/teacher/scenarios:
+    get:
+      summary: Список сценариев преподавателя
+      responses:
+        "200":
+          description: Список сценариев
+    post:
+      summary: Создать черновик сценария
+      responses:
+        "201":
+          description: Сценарий создан
+  /api/teacher/sessions:
+    post:
+      summary: Создать учебную сессию
+      responses:
+        "201":
+          description: Сессия создана
+  /api/teacher/sessions/{sessionId}/start:
+    post:
+      summary: Запустить учебную сессию
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Сессия запущена
+  /api/teacher/sessions/{sessionId}/stop:
+    post:
+      summary: Завершить учебную сессию
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Сессия завершена
+  /api/teacher/sessions/{sessionId}/report:
+    get:
+      summary: Получить отчёт по сессии
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Отчёт сформирован
+  /api/student/assignments:
+    get:
+      summary: Назначенные задания обучающегося
+      responses:
+        "200":
+          description: Список заданий
+  /api/student/sessions/{sessionId}:
+    get:
+      summary: Получить состояние сессии
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Состояние сессии
+  /api/student/sessions/{sessionId}/card:
+    patch:
+      summary: Сохранить промежуточное состояние карточки
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Карточка сохранена
+  /api/student/sessions/{sessionId}/submit:
+    post:
+      summary: Отправить ответ на оценивание
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "202":
+          description: Оценивание запущено
+components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
