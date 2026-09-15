@@ -5,7 +5,7 @@
 
 from fastapi import FastAPI
 
-from app.config import SERVICE_NAME, SERVICE_VERSION
+from app.config import SERVICE_VERSION
 from app.web.errors import register_error_handlers
 from app.web.middleware import register_request_id
 from app.web.routes import ai_router, health_router

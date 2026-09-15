@@ -55,11 +55,24 @@ def test_time_penalty_applied_only_over_limit(client, scenario):
 
 
 def test_critical_error_blocks_pass(client, scenario):
+    """Заглушка всегда роняет один критический критерий, зачёта быть не может.
+
+    Когда в #16 появится настоящая оценка, этот тест придётся переписать на
+    два случая: с критической ошибкой и без неё.
+    """
     body = client.post("/ai/sessions/score", json=_request(scenario)).json()
 
-    has_critical = any(item["severity"] == "CRITICAL" for item in body["errors"])
-    if has_critical:
-        assert body["passed"] is False
+    assert any(item["severity"] == "CRITICAL" for item in body["errors"])
+    assert body["passed"] is False
+
+
+def test_error_points_to_card_field_only_when_it_exists(client, scenario):
+    """У критерия про норматив времени нет поля в карточке, и подсвечивать нечего."""
+    body = client.post("/ai/sessions/score", json=_request(scenario)).json()
+
+    fields = {item["code"]: item.get("field") for item in body["errors"]}
+    assert fields.get("CRITERION_ADDRESS") == "address"
+    assert "field" not in fields or fields.get("CRITERION_TIMING") is None
 
 
 def test_recommendation_for_each_error(client, scenario):

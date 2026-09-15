@@ -49,6 +49,15 @@ RECOMMENDATION_BY_CODE: Dict[str, str] = {
 
 DEFAULT_RECOMMENDATION = "Разберите этот критерий с преподавателем и повторите сценарий."
 
+# Поле карточки, которое frontend может подсветить при ошибке.
+# Заполняется только там, где критерий действительно относится к полю:
+# у критериев вроде соблюдения норматива поля в карточке нет.
+CARD_FIELD_BY_CODE: Dict[str, str] = {
+    "ADDRESS": "address",
+    "INCIDENT_TYPE": "incidentType",
+    "SERVICES": "services",
+}
+
 
 def _distribute_points(criteria: List[RubricCriterion]) -> List[float]:
     """Делит MAX_SCORE между критериями пропорционально весам.
@@ -93,6 +102,8 @@ def score(request: ScoreRequest) -> ScoreResponse:
 
     results: List[CriterionResult] = []
     errors: List[ScoringError] = []
+    # Коды критериев, по которым потеряны баллы: по ним же строятся рекомендации.
+    lost_codes: List[str] = []
 
     for index, criterion in enumerate(criteria):
         status, share = STATUS_PATTERN[index % len(STATUS_PATTERN)]
@@ -110,12 +121,13 @@ def score(request: ScoreRequest) -> ScoreResponse:
         )
 
         if status != CriterionStatus.PASSED:
+            lost_codes.append(criterion.code)
             errors.append(
                 ScoringError(
                     code="CRITERION_{code}".format(code=criterion.code),
                     severity=_severity(criterion, status),
                     message=_message(criterion, status),
-                    field=criterion.code.lower(),
+                    field=CARD_FIELD_BY_CODE.get(criterion.code),
                 )
             )
 
@@ -138,8 +150,7 @@ def score(request: ScoreRequest) -> ScoreResponse:
 
     has_critical = any(error.severity == Severity.CRITICAL for error in errors)
     recommendations = [
-        RECOMMENDATION_BY_CODE.get(error.field.upper() if error.field else "", DEFAULT_RECOMMENDATION)
-        for error in errors
+        RECOMMENDATION_BY_CODE.get(code, DEFAULT_RECOMMENDATION) for code in lost_codes
     ]
 
     return ScoreResponse(

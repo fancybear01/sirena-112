@@ -5,7 +5,7 @@
 """
 
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -34,7 +34,7 @@ def _error_response(
     http_status: int,
     code: str,
     message: str,
-    details: List[ErrorDetail] = None,
+    details: Optional[List[ErrorDetail]] = None,
 ) -> JSONResponse:
     request_id = _request_id(request)
     payload = ApiError(
