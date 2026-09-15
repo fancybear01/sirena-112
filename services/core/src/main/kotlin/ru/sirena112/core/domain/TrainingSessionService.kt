@@ -59,6 +59,16 @@ class TrainingSessionService(
         return session
     }
 
+    /** Фиксирует отправку ответа, не меняя состояние агрегата. */
+    fun submitAnswer(sessionId: UUID): TrainingSession {
+        val session = requireSession(sessionId)
+        if (session.state !in setOf(SessionState.ACTIVE, SessionState.COMPLETED)) {
+            throw IllegalStateException("Ответ нельзя отправить в состоянии ${session.state}")
+        }
+        append(session, SessionEventType.OPERATOR_ANSWER_SUBMITTED, EventSource.CORE)
+        return session
+    }
+
     private fun transition(sessionId: UUID, action: (TrainingSession) -> TrainingSession): TrainingSession {
         val session = action(requireSession(sessionId))
         sessions.save(session)

@@ -2,6 +2,7 @@ package ru.sirena112.core.domain
 
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 interface ScenarioRepository {
     fun save(scenario: Scenario): Scenario
@@ -48,14 +49,23 @@ interface SessionEventRepository {
     fun findBySessionId(sessionId: UUID): List<SessionEvent>
 }
 
-class InMemorySessionEventRepository : SessionEventRepository {
+/** Локальная подписка на новые события; заменяется брокером при масштабировании. */
+interface SessionEventSubscription {
+    fun subscribe(sessionId: UUID, listener: (SessionEvent) -> Unit): () -> Unit
+}
+
+class InMemorySessionEventRepository : SessionEventRepository, SessionEventSubscription {
     /** Linked map keeps append order when several events share the same Instant. */
     private val events = LinkedHashMap<UUID, SessionEvent>()
+    private val listeners = ConcurrentHashMap<UUID, CopyOnWriteArrayList<(SessionEvent) -> Unit>>()
 
     @Synchronized
     override fun saveIfAbsent(event: SessionEvent): Boolean {
         if (events.containsKey(event.eventId)) return false
         events[event.eventId] = event
+        listeners[event.sessionId]?.forEach { listener ->
+            runCatching { listener(event) }
+        }
         return true
     }
 
@@ -67,4 +77,13 @@ class InMemorySessionEventRepository : SessionEventRepository {
         .asSequence()
         .filter { it.sessionId == sessionId }
         .toList()
+
+    override fun subscribe(sessionId: UUID, listener: (SessionEvent) -> Unit): () -> Unit {
+        val sessionListeners = listeners.computeIfAbsent(sessionId) { CopyOnWriteArrayList() }
+        sessionListeners += listener
+        return {
+            sessionListeners.remove(listener)
+            if (sessionListeners.isEmpty()) listeners.remove(sessionId, sessionListeners)
+        }
+    }
 }
