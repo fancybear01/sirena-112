@@ -20,7 +20,32 @@
     "title": { "type": "string", "minLength": 1 },
     "category": {
       "type": "string",
-      "enum": ["FIRE", "ACCIDENT", "MEDICAL", "UTILITY", "GAS", "OTHER"]
+      "description": "Группа происшествий по классификатору ГБУ «Система 112». Значения соответствуют 23 группам классификатора один к одному; преподаватель выбирает по ним тему занятия.",
+      "enum": [
+        "FIRE",
+        "ACCIDENT",
+        "EXPLOSION",
+        "EXPLOSION_THREAT",
+        "COLLAPSE",
+        "COLLAPSE_THREAT",
+        "NATURAL_HAZARD",
+        "ENVIRONMENT",
+        "HYDRAULIC_FACILITY",
+        "INDUSTRIAL_ACCIDENT",
+        "HAZMAT_THREAT",
+        "TRANSPORT_FACILITY",
+        "GAS",
+        "UTILITY",
+        "PUBLIC_ORDER",
+        "ROAD_CONDITION",
+        "PERSON_AT_RISK",
+        "CHILD_AT_RISK",
+        "DEATH",
+        "SOCIAL_AID",
+        "ANIMAL",
+        "MEDICAL",
+        "OTHER"
+      ]
     },
     "difficulty": {
       "type": "string",
@@ -33,12 +58,38 @@
       "additionalProperties": true,
       "required": ["incidentType", "requiredServices"],
       "properties": {
-        "incidentType": { "type": "string" },
+        "incidentType": {
+          "type": "string",
+          "description": "Итоговый тип происшествия. Вычисляется из комбинации признаков по классификатору, а не задаётся произвольно."
+        },
+        "ekpCode": {
+          "type": "string",
+          "pattern": "^[0-9]{6,9}$",
+          "description": "Код комбинации признаков в классификаторе происшествий."
+        },
+        "signs": {
+          "type": "object",
+          "description": "Формализованные признаки происшествия, которые оператор выбирает в опросной карте АРМ-112. Именно их выбор и оценивается, тип происшествия из них следует.",
+          "additionalProperties": false,
+          "required": ["level1"],
+          "properties": {
+            "level1": { "type": "string" },
+            "level2": { "type": ["string", "null"] },
+            "level3": { "type": ["string", "null"] },
+            "additional": {
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true,
+              "description": "Дополнительные признаки, не влияющие на итоговый тип."
+            }
+          }
+        },
         "address": { "type": ["string", "null"] },
         "requiredServices": {
           "type": "array",
           "items": { "type": "string" },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Список оповещения. Вычисляется из итогового типа происшествия по классификатору."
         },
         "facts": {
           "type": "object",
