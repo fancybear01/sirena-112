@@ -43,10 +43,10 @@ PCM-аудио обучающегося. AI возвращает синтези�
 cd services/ai
 python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/python -m uvicorn app.main:app --port 8000
+.venv/bin/python -m uvicorn app.main:app --port 8090
 ```
 
-Документация API поднимается на `http://localhost:8000/docs`.
+Документация API поднимается на `http://localhost:8090/docs`.
 
 Тесты:
 
@@ -55,6 +55,8 @@ python3 -m venv .venv
 ```
 
 Переменные окружения: `AI_HOST`, `AI_PORT`, `AI_ENGINE` (сейчас только `mock`).
+Значения по умолчанию взяты из `.env.example` в корне репозитория; порт 8090
+совпадает с `core.ai-base-url`, по которому Core обращается к сервису.
 
 ## Эндпоинты
 
@@ -103,7 +105,7 @@ python3 -m venv .venv
 ## Пример
 
 ```bash
-curl -s localhost:8000/ai/scenarios/generate \
+curl -s localhost:8090/ai/scenarios/generate \
   -H 'Content-Type: application/json' \
   -d '{"category":"FIRE","difficulty":"BASIC","count":1,"seed":7}'
 ```

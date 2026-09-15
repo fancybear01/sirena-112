@@ -1,6 +1,6 @@
 """Точка входа AI-сервиса.
 
-Запуск: uvicorn app.main:app --port 8000
+Запуск: uvicorn app.main:app --port 8090
 """
 
 from fastapi import FastAPI
