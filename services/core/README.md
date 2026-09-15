@@ -51,3 +51,25 @@ JSON-формат, а запросы получают корреляционны
 ./gradlew test
 ./gradlew bootRun
 ```
+
+## Доменная модель учебной сессии
+
+Состояние `TrainingSession` меняется только доменными методами и соответствует
+`contracts/events.md`:
+
+```text
+CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
+                     |           |            |
+                     +--------> FAILED <------+
+```
+
+В `SessionMode.CARD` сессия переходит из `READY` сразу в `ACTIVE`; звонковые
+переходы доступны только в `SessionMode.VOICE`. `Scenario`, `OperatorCard` и
+конверт `SessionEvent` используют поля актуального сценарного и событийного
+контрактов, включая `groundTruth.signs` и `ekpCode`.
+
+Пока PostgreSQL ещё не подключён, доступны интерфейсы
+`ScenarioRepository`, `TrainingSessionRepository` и `SessionEventRepository` с
+потокобезопасными in-memory реализациями. Репозиторий событий идемпотентен по
+`eventId`, поэтому его можно заменить на PostgreSQL без изменения доменной
+логики.
