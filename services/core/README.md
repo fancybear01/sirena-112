@@ -23,6 +23,10 @@ Kotlin Core API является единственным источником �
 gradle bootRun
 ```
 
+В `settings.gradle.kts` первым указан `repo1.maven.org` — это тот же Maven
+Central, но он обходится без сетевой проблемы, при которой некоторые
+окружения возвращают Gradle ошибку `403` на `repo.maven.apache.org`.
+
 По умолчанию API слушает `http://localhost:8080`.
 
 Проверки запуска:
