@@ -14,3 +14,26 @@ Kotlin Core API является единственным источником �
 - интеграция с AI и Media Gateway.
 
 Только этот сервис получает доступ к основной схеме PostgreSQL.
+
+## Быстрый запуск
+
+Требуется JDK 11+ и Gradle 8+:
+
+```bash
+gradle bootRun
+```
+
+По умолчанию API слушает `http://localhost:8080`.
+
+Проверки запуска:
+
+```bash
+curl http://localhost:8080/health/live
+curl http://localhost:8080/health/ready
+curl http://localhost:8080/actuator/health
+```
+
+Настройки берутся из окружения: `CORE_PORT`, `CORE_ENVIRONMENT` и
+`CORE_VERSION`. Все ответы имеют JSON-формат, а запросы получают
+корреляционный заголовок `X-Request-ID`; логи выводятся в JSON и включают этот
+идентификатор.
