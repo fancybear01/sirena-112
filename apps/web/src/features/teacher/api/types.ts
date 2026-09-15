@@ -50,6 +50,8 @@ export type TeacherSession = {
 
 export interface TeacherApi {
   getScenarios(): Promise<TeacherScenario[]>;
+  getCurrentSession(): Promise<TeacherSession | null>;
   launchSession(scenarioId: string): Promise<TeacherSession>;
   stopSession(sessionId: string): Promise<TeacherSession>;
+  clearSession(): Promise<void>;
 }

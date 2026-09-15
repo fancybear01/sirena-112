@@ -25,7 +25,10 @@ beforeAll(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 function renderTeacher(api = createTeacherMockApi({ delayMs: 0 })) {
   return render(
@@ -62,6 +65,34 @@ describe('teacher scenario flow', () => {
     await user.click(screen.getByRole('radio', { name: 'Высокая' }));
     expect(screen.getByRole('heading', { name: 'Запах газа в подъезде', level: 2 })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Сценарий не готов' })).toBeDisabled();
+  });
+
+  it('restores the session after a page reload and clears it for a new session', async () => {
+    const user = userEvent.setup();
+    renderTeacher();
+    await screen.findByRole('heading', { name: 'Пожар в жилом доме', level: 2 });
+    await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
+    await screen.findByText('ACTIVE');
+    const sessionId = document.querySelector('.session-id')?.textContent;
+    expect(sessionId).toBeTruthy();
+
+    cleanup();
+    renderTeacher(createTeacherMockApi({ delayMs: 0 }));
+    expect(await screen.findByText('ACTIVE')).toBeInTheDocument();
+    expect(screen.getByText(sessionId!)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Завершить занятие' }));
+    await screen.findByText('COMPLETED');
+    cleanup();
+    renderTeacher(createTeacherMockApi({ delayMs: 0 }));
+    expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Новое занятие' }));
+    expect(await screen.findByRole('button', { name: 'Запустить занятие' })).toBeInTheDocument();
+    cleanup();
+    renderTeacher(createTeacherMockApi({ delayMs: 0 }));
+    expect(await screen.findByRole('button', { name: 'Запустить занятие' })).toBeInTheDocument();
+    expect(screen.queryByText('COMPLETED')).not.toBeInTheDocument();
   });
 
   it('shows an empty state', async () => {

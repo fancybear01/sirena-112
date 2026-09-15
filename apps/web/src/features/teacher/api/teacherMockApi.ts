@@ -5,7 +5,10 @@ type MockOptions = {
   scenarios?: TeacherScenario[];
   delayMs?: number;
   failScenarios?: boolean;
+  storage?: Storage | null;
 };
+
+export const teacherSessionStorageKey = 'sirena-112:teacher-session';
 
 function createEmptyCard(): TeacherSession['card'] {
   return {
@@ -21,10 +24,61 @@ function makeUuid() {
   return crypto.randomUUID();
 }
 
+function getBrowserStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isStoredSession(value: unknown): value is TeacherSession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<TeacherSession>;
+  return typeof session.id === 'string'
+    && typeof session.scenarioId === 'string'
+    && session.mode === 'CARD'
+    && (session.state === 'ACTIVE' || session.state === 'COMPLETED')
+    && typeof session.startedAt === 'string'
+    && (session.endedAt === null || typeof session.endedAt === 'string')
+    && session.report === null
+    && Boolean(session.card && typeof session.card === 'object');
+}
+
 export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
   const scenarios = options.scenarios ?? scenarioFixtures;
   const delayMs = options.delayMs ?? 250;
-  const sessions = new Map<string, TeacherSession>();
+  const storage = options.storage === undefined ? getBrowserStorage() : options.storage;
+
+  function readSession(): TeacherSession | null {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem(teacherSessionStorageKey);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (isStoredSession(parsed)) return parsed;
+      storage.removeItem(teacherSessionStorageKey);
+    } catch {
+      // Corrupted or unavailable mock storage behaves like an empty backend.
+    }
+    return null;
+  }
+
+  let currentSession = readSession();
+
+  function persistSession(session: TeacherSession | null) {
+    currentSession = session;
+    if (!storage) return;
+    try {
+      if (session) {
+        storage.setItem(teacherSessionStorageKey, JSON.stringify(session));
+      } else {
+        storage.removeItem(teacherSessionStorageKey);
+      }
+    } catch {
+      // The flow still works in memory when browser storage is unavailable.
+    }
+  }
 
   async function respond<T>(value: T): Promise<T> {
     if (delayMs > 0) {
@@ -40,6 +94,10 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         throw new Error('Mock scenarios request failed');
       }
       return respond(scenarios);
+    },
+
+    async getCurrentSession() {
+      return respond(currentSession);
     },
 
     async launchSession(scenarioId) {
@@ -59,13 +117,13 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         startedAt,
         endedAt: null,
       };
-      sessions.set(session.id, session);
+      persistSession(session);
       return respond(session);
     },
 
     async stopSession(sessionId) {
-      const session = sessions.get(sessionId);
-      if (!session || session.state !== 'ACTIVE') {
+      const session = currentSession;
+      if (!session || session.id !== sessionId || session.state !== 'ACTIVE') {
         throw new Error('Active session not found');
       }
 
@@ -74,8 +132,13 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         state: 'COMPLETED',
         endedAt: new Date().toISOString(),
       };
-      sessions.set(sessionId, completed);
+      persistSession(completed);
       return respond(completed);
+    },
+
+    async clearSession() {
+      await respond(null);
+      persistSession(null);
     },
   };
 }

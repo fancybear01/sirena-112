@@ -27,6 +27,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 function renderAt(path: string) {

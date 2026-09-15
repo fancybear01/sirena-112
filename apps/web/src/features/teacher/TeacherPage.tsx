@@ -75,17 +75,25 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
   const [operationError, setOperationError] = useState('');
   const [isLaunching, setIsLaunching] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const timer = useSessionTimer(session);
 
   const loadScenarios = useCallback(async () => {
     setListError(false);
     setScenarios(null);
     try {
-      const items = await api.getScenarios();
+      const [items, savedSession] = await Promise.all([
+        api.getScenarios(),
+        api.getCurrentSession(),
+      ]);
       setScenarios(items);
-      setSelectedId((current) => (
-        current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null
-      ));
+      setSession(savedSession);
+      setSelectedId((current) => {
+        if (savedSession && items.some((item) => item.id === savedSession.scenarioId)) {
+          return savedSession.scenarioId;
+        }
+        return current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null;
+      });
     } catch {
       setListError(true);
     }
@@ -130,6 +138,19 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
       setOperationError('Не удалось завершить занятие. Попробуйте ещё раз.');
     } finally {
       setIsStopping(false);
+    }
+  }
+
+  async function clearSession() {
+    setOperationError('');
+    setIsClearing(true);
+    try {
+      await api.clearSession();
+      setSession(null);
+    } catch {
+      setOperationError('Не удалось очистить сессию. Попробуйте ещё раз.');
+    } finally {
+      setIsClearing(false);
     }
   }
 
@@ -230,7 +251,13 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                       Завершить занятие
                     </Button>
                   ) : (
-                    <Button fullWidth mt="xl" variant="light" onClick={() => setSession(null)}>
+                    <Button
+                      fullWidth
+                      mt="xl"
+                      variant="light"
+                      loading={isClearing}
+                      onClick={() => void clearSession()}
+                    >
                       Новое занятие
                     </Button>
                   )}
