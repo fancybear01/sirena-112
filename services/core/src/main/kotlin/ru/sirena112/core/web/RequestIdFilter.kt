@@ -21,15 +21,25 @@ class RequestIdFilter : OncePerRequestFilter() {
         response.setHeader(REQUEST_ID_HEADER, requestId)
         request.setAttribute(MDC_KEY, requestId)
         MDC.put(MDC_KEY, requestId)
+        val sessionId = request.getHeader(SESSION_ID_HEADER)?.takeIf { it.isNotBlank() }
+        if (sessionId != null) {
+            request.setAttribute(SESSION_ID_MDC_KEY, sessionId)
+            MDC.put(SESSION_ID_MDC_KEY, sessionId)
+        }
         try {
             filterChain.doFilter(request, response)
         } finally {
             MDC.remove(MDC_KEY)
+            if (sessionId != null) {
+                MDC.remove(SESSION_ID_MDC_KEY)
+            }
         }
     }
 
     private companion object {
         const val REQUEST_ID_HEADER = "X-Request-ID"
+        const val SESSION_ID_HEADER = "X-Session-ID"
         const val MDC_KEY = "requestId"
+        const val SESSION_ID_MDC_KEY = "sessionId"
     }
 }

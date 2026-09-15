@@ -16,6 +16,8 @@ server:
 core:
   environment: ${CORE_ENVIRONMENT:local}
   version: ${CORE_VERSION:dev}
+  ai-base-url: ${CORE_AI_BASE_URL:http://localhost:8090}
+  media-base-url: ${CORE_MEDIA_BASE_URL:http://localhost:8091}
 
 management:
   endpoints:

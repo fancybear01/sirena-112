@@ -2,15 +2,13 @@ package ru.sirena112.core.web
 
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import ru.sirena112.core.config.CoreProperties
 
 @RestController
-@RequestMapping("/health")
 class HealthController(private val properties: CoreProperties) {
 
-    @GetMapping("/live")
+    @GetMapping("/health", "/health/live")
     fun live(): HealthResponse = HealthResponse(
         status = "UP",
         service = "sirena-core",
@@ -18,7 +16,7 @@ class HealthController(private val properties: CoreProperties) {
         environment = properties.environment
     )
 
-    @GetMapping("/ready")
+    @GetMapping("/ready", "/health/ready")
     fun ready(): ResponseEntity<HealthResponse> = ResponseEntity.ok(
         HealthResponse(
             status = "UP",

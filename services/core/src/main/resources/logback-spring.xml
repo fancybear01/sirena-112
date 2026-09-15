@@ -5,6 +5,7 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <customFields>{"service":"${applicationName}"}</customFields>
             <includeMdcKeyName>requestId</includeMdcKeyName>
+            <includeMdcKeyName>sessionId</includeMdcKeyName>
         </encoder>
     </appender>
 
