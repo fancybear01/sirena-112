@@ -73,3 +73,30 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 потокобезопасными in-memory реализациями. Репозиторий событий идемпотентен по
 `eventId`, поэтому его можно заменить на PostgreSQL без изменения доменной
 логики.
+
+## Карточный учебный сценарий (задача #7)
+
+Сквозной сценарий доступен без внешних сервисов и использует утверждённый
+mock-сценарий. Идентификатор сценария можно получить первым запросом:
+
+```bash
+curl http://localhost:8080/api/teacher/scenarios
+```
+
+Далее выполните последовательность (подставьте `SESSION_ID` из ответа на
+создание сессии):
+
+```bash
+curl -X POST http://localhost:8080/api/teacher/sessions \
+  -H 'Content-Type: application/json' -d '{}'
+curl -X POST http://localhost:8080/api/teacher/sessions/SESSION_ID/start
+curl -X PATCH http://localhost:8080/api/student/sessions/SESSION_ID/card \
+  -H 'Content-Type: application/json' \
+  -d '{"incidentType":"задымление: мусоропровод","signs":{"level1":"жилой дом","level2":"мусоропровод","level3":"дым"},"address":"Москва, ул. Берзарина, д. 21, корп. 1, под. 3","requiredServices":["Служба 101","ДДС района","МОЭК"]}'
+curl -X POST http://localhost:8080/api/teacher/sessions/SESSION_ID/stop
+curl -X POST http://localhost:8080/api/student/sessions/SESSION_ID/submit
+curl http://localhost:8080/api/teacher/sessions/SESSION_ID/report
+```
+
+Отчёт содержит итоговый `score`, критерии с баллами, `errors` и
+`recommendations`. Пустая карточка отклоняется с HTTP 400.

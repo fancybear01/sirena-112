@@ -6,7 +6,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.servlet.NoHandlerFoundException
+import ru.sirena112.core.domain.InvalidSessionTransitionException
 import java.time.Instant
+import java.util.NoSuchElementException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
@@ -19,6 +21,39 @@ class ApiExceptionHandler {
         status = HttpStatus.BAD_REQUEST,
         code = "BAD_REQUEST",
         message = exception.message ?: "Некорректный запрос",
+        request = request
+    )
+
+    @ExceptionHandler(InvalidSessionTransitionException::class)
+    fun handleInvalidTransition(
+        exception: InvalidSessionTransitionException,
+        request: ServletWebRequest
+    ): ResponseEntity<ApiError> = response(
+        status = HttpStatus.CONFLICT,
+        code = "SESSION_INVALID_TRANSITION",
+        message = exception.message ?: "Недопустимый переход учебной сессии",
+        request = request
+    )
+
+    @ExceptionHandler(NoSuchElementException::class)
+    fun handleNotFound(
+        exception: NoSuchElementException,
+        request: ServletWebRequest
+    ): ResponseEntity<ApiError> = response(
+        status = HttpStatus.NOT_FOUND,
+        code = "NOT_FOUND",
+        message = exception.message ?: "Ресурс не найден",
+        request = request
+    )
+
+    @ExceptionHandler(IllegalStateException::class)
+    fun handleConflict(
+        exception: IllegalStateException,
+        request: ServletWebRequest
+    ): ResponseEntity<ApiError> = response(
+        status = HttpStatus.CONFLICT,
+        code = "INVALID_STATE",
+        message = exception.message ?: "Операция недоступна в текущем состоянии",
         request = request
     )
 
