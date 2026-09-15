@@ -114,6 +114,9 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
   }, [selectedId, visibleScenarios]);
 
   const selectedScenario = scenarios?.find((scenario) => scenario.id === selectedId) ?? null;
+  const sessionScenario = session
+    ? scenarios?.find((scenario) => scenario.id === session.scenarioId) ?? null
+    : null;
 
   async function launchSession() {
     if (!selectedScenario) return;
@@ -230,34 +233,30 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                       {session.state}
                     </Badge>
                   </Group>
-                  {selectedScenario && (
+                  {sessionScenario && (
                     <section className="session-scenario" aria-label="Информация о сценарии">
-                      <Title order={2}>{selectedScenario.title}</Title>
+                      <Title order={2}>{sessionScenario.title}</Title>
                       <Text c="dimmed" mt="xs" className="session-scenario__description">
-                        {selectedScenario.profile}
+                        {sessionScenario.profile}
                       </Text>
                       <div className="session-meta">
                         <div>
                           <Text size="xs" c="dimmed">Категория</Text>
-                          <Text size="sm" fw={600} mt={3}>{selectedScenario.category}</Text>
+                          <Text size="sm" fw={600} mt={3}>{sessionScenario.category}</Text>
                         </div>
                         <div>
                           <Text size="xs" c="dimmed">Сложность</Text>
                           <Text size="sm" fw={600} mt={3}>
-                            {difficultyLabels[selectedScenario.difficulty]}
+                            {difficultyLabels[sessionScenario.difficulty]}
                           </Text>
                         </div>
                         <div>
                           <Text size="xs" c="dimmed">Лимит времени</Text>
                           <Text size="sm" fw={600} mt={3}>
-                            {selectedScenario.timeLimitSeconds
-                              ? `${Math.round(selectedScenario.timeLimitSeconds / 60)} мин`
+                            {sessionScenario.timeLimitSeconds
+                              ? `${Math.round(sessionScenario.timeLimitSeconds / 60)} мин`
                               : 'Не задан'}
                           </Text>
-                        </div>
-                        <div>
-                          <Text size="xs" c="dimmed">Версия</Text>
-                          <Text size="sm" fw={600} mt={3}>{selectedScenario.version}</Text>
                         </div>
                       </div>
                     </section>

@@ -124,7 +124,7 @@ body { margin: 0; min-width: 320px; }
 .session-scenario__description { line-height: 1.55; }
 .session-meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px 24px;
   margin-top: 18px;
   padding: 16px;
@@ -154,4 +154,5 @@ body { margin: 0; min-width: 320px; }
   .teacher-page > div:first-child h1 { font-size: 26px; }
   .difficulty-filter { width: 100%; overflow-x: auto; }
   .teacher-layout { grid-template-columns: 1fr; }
+  .session-meta { grid-template-columns: 1fr; }
 }

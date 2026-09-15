@@ -54,13 +54,17 @@ describe('teacher scenario flow', () => {
     expect(within(scenarioInfo).getByText('Дорожное происшествие')).toBeInTheDocument();
     expect(within(scenarioInfo).getByText('Средняя')).toBeInTheDocument();
     expect(within(scenarioInfo).getByText('8 мин')).toBeInTheDocument();
-    expect(within(scenarioInfo).getByText('2')).toBeInTheDocument();
+    expect(within(scenarioInfo).queryByText('Версия')).not.toBeInTheDocument();
     expect(screen.getByTestId('session-timer')).toHaveTextContent(/^\d{2}:\d{2}$/);
     expect(screen.getByText('Идентификатор сессии')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Завершить занятие' }));
     expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Новое занятие' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Открыть сценарий «Пожар в жилом доме»' }));
+    expect(within(scenarioInfo).getByRole('heading', { name: 'ДТП с пострадавшими' })).toBeInTheDocument();
+    expect(within(scenarioInfo).queryByRole('heading', { name: 'Пожар в жилом доме' })).not.toBeInTheDocument();
   });
 
   it('filters scenarios by difficulty', async () => {
