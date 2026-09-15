@@ -15,7 +15,9 @@ class Settings:
 
     def __init__(self) -> None:
         self.host = os.getenv("AI_HOST", "0.0.0.0")
-        self.port = int(os.getenv("AI_PORT", "8000"))
+        # 8090 — значение из .env.example, по нему же Core ищет сервис
+        # (core.ai-base-url). Менять только вместе с настройками Core.
+        self.port = int(os.getenv("AI_PORT", "8090"))
         # engine определяет реализацию генерации, диалога и оценки.
         # На этом этапе доступен только mock, локальные модели подключаются
         # отдельными задачами и не меняют контракт.
