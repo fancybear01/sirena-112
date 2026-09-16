@@ -112,7 +112,12 @@ def check_address(request: ScoreRequest) -> CheckResult:
     if not expected:
         return CheckResult(1.0, "")
 
-    match = compare_address(expected, request.submitted_card.address or "")
+    # Пустое поле и неверное значение - разные ошибки, и преподаватель должен
+    # видеть разницу: во втором случае человек хотя бы пытался.
+    if not request.submitted_card.address:
+        return CheckResult(0.0, "адрес не заполнен")
+
+    match = compare_address(expected, request.submitted_card.address)
     if match.share >= 1.0:
         return CheckResult(1.0, "")
     if match.share < ADDRESS_PARTIAL_FLOOR:
@@ -154,11 +159,11 @@ def check_incident_type(request: ScoreRequest) -> CheckResult:
     actual = request.submitted_card.incident_type
     if _text(expected) == _text(actual):
         return CheckResult(1.0, "")
+    if not actual:
+        return CheckResult(0.0, "тип происшествия не выбран")
     return CheckResult(
         0.0,
-        "выбран тип «{got}», в эталоне «{want}»".format(
-            got=actual or "не выбран", want=expected
-        ),
+        "выбран тип «{got}», в эталоне «{want}»".format(got=actual, want=expected),
     )
 
 
