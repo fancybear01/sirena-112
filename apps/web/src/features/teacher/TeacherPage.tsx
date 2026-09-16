@@ -225,8 +225,9 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                 ))}
               </Stack>
 
-              {session ? (
-                <Paper className="session-panel" withBorder radius="lg" p="xl">
+              <div className={`teacher-panel-slot${session ? ' teacher-panel-slot--session' : ''}`}>
+                {session ? (
+                  <Paper className="session-panel" withBorder radius="lg" p="xl">
                   <Group justify="space-between" mb="xl">
                     <Text fw={650}>Учебная сессия</Text>
                     <Badge color={session.state === 'ACTIVE' ? 'teal' : 'gray'} variant="light" size="lg">
@@ -292,9 +293,9 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                       Новое занятие
                     </Button>
                   )}
-                </Paper>
-              ) : selectedScenario ? (
-                <Paper className="scenario-details" withBorder radius="lg" p="xl">
+                  </Paper>
+                ) : selectedScenario ? (
+                  <Paper className="scenario-details" withBorder radius="lg" p="xl">
                   <Group gap="xs" mb="md">
                     <Badge variant="light">{difficultyLabels[selectedScenario.difficulty]}</Badge>
                     <Badge color={selectedScenario.status === 'READY' ? 'teal' : 'gray'} variant="light">
@@ -330,8 +331,9 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                   >
                     {selectedScenario.status === 'READY' ? 'Запустить занятие' : 'Сценарий не готов'}
                   </Button>
-                </Paper>
-              ) : null}
+                  </Paper>
+                ) : null}
+              </div>
             </div>
           )}
         </>

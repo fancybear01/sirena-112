@@ -101,6 +101,19 @@ body { margin: 0; min-width: 320px; }
   gap: 20px;
   align-items: start;
 }
+.teacher-panel-slot { min-width: 0; }
+.teacher-panel-slot--session {
+  position: relative;
+  align-self: stretch;
+  min-height: 345px;
+}
+.teacher-panel-slot--session .session-panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateY(clamp(120px, 18vh, 180px));
+}
 .scenario-card {
   display: block;
   width: 100%;
@@ -154,5 +167,7 @@ body { margin: 0; min-width: 320px; }
   .teacher-page > div:first-child h1 { font-size: 26px; }
   .difficulty-filter { width: 100%; overflow-x: auto; }
   .teacher-layout { grid-template-columns: 1fr; }
+  .teacher-panel-slot--session { min-height: 0; }
+  .teacher-panel-slot--session .session-panel { position: static; transform: none; }
   .session-meta { grid-template-columns: 1fr; }
 }
