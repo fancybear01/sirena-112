@@ -148,5 +148,34 @@
         "бензин"
       ]
     }
+  ],
+  "operatorItems": [
+    {
+      "file": "07_op_greeting.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 4.44,
+      "text": "Служба 112, здравствуйте, слушаю вас",
+      "expectedIntent": "",
+      "expectedTone": "GREETING"
+    },
+    {
+      "file": "08_op_address.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 3.33,
+      "text": "Назовите адрес происшествия",
+      "expectedIntent": "ADDRESS",
+      "expectedTone": ""
+    },
+    {
+      "file": "09_op_victims.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 3.5,
+      "text": "Пострадавшие есть, помощь нужна?",
+      "expectedIntent": "VICTIMS",
+      "expectedTone": ""
+    }
   ]
 }
