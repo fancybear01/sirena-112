@@ -18,6 +18,7 @@ out/
 
 # Node / frontend
 node_modules/
+.npm-cache/
 dist/
 .next/
 coverage/

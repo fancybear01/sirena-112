@@ -1,0 +1,96 @@
+:root {
+  color: #1d2c43;
+  background: #f7f9fc;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+
+.brand { display: inline-flex; align-items: center; gap: 11px; white-space: nowrap; }
+.brand__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #397cbd;
+}
+.brand__name { font-size: 21px; font-weight: 750; letter-spacing: -.045em; color: #23334b; }
+.brand__name span { margin-left: 4px; color: #397cbd; }
+
+.login-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 20% 15%, #eaf2fc, transparent 36%), #f7f9fc;
+}
+.login-panel {
+  width: min(100%, 470px);
+  padding: clamp(26px, 4vw, 42px);
+  background: #fff;
+  border-color: #e6ebf2;
+  box-shadow: 0 14px 36px rgba(27, 52, 84, .06);
+}
+.login-panel h1 { color: #1d2c43; font-size: 31px; letter-spacing: -.04em; }
+.login-role-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border: 1px solid #e7ecf3;
+  border-radius: 13px;
+  background: #fff;
+  transition: background-color .15s, border-color .15s;
+}
+.login-role-card:hover { background: #f8fbff; border-color: #bdd6ee; }
+.login-role-card:focus-visible { outline: 3px solid #9cc8ec; outline-offset: 2px; }
+.login-role-card__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 11px;
+  color: #397cbd;
+  background: #edf5fc;
+}
+.login-role-card__arrow { margin-left: auto; color: #9cabbc; flex: none; }
+
+.shell-header { background: #fff; border-bottom: 1px solid #e7ecf2; }
+.shell-header .brand__mark { width: 34px; height: 34px; border-radius: 10px; }
+.shell-header .brand__name { font-size: 19px; }
+.shell-main { min-height: 100vh; background: #f7f9fc; }
+.content-wrap { max-width: 900px; margin: 0 auto; padding: 24px 0 40px; }
+.workspace-page h1 { color: #1d2c43; font-size: 31px; letter-spacing: -.04em; }
+.state-placeholder {
+  min-height: 300px;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  background: #fff;
+  border-color: #e6ebf2;
+}
+.state-placeholder h3 { color: #2c3d55; font-size: 18px; font-weight: 650; }
+.not-found {
+  min-height: 350px;
+  padding: 32px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background: #fff;
+  border-color: #e6ebf2;
+}
+.not-found h1 { font-size: 27px; letter-spacing: -.03em; }
+
+@media (max-width: 600px) {
+  .content-wrap { padding-top: 12px; }
+  .workspace-page h1 { font-size: 26px; }
+  .state-placeholder { min-height: 250px; }
+}
