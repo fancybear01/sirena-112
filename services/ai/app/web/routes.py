@@ -11,7 +11,7 @@
 from fastapi import APIRouter
 
 from app.config import SERVICE_NAME, SERVICE_VERSION, settings
-from app.engines import mock_scenarios, mock_scoring, rule_dialogue
+from app.engines import mock_scenarios, rule_dialogue, rule_scoring
 from app.schemas.common import CamelModel
 from app.schemas.dialogue import DialogueRequest, DialogueResponse
 from app.schemas.generation import ScenarioGenerateRequest, ScenarioGenerateResponse
@@ -69,4 +69,4 @@ def dialogue_respond(request: DialogueRequest) -> DialogueResponse:
 )
 def score_session(request: ScoreRequest) -> ScoreResponse:
     """Считает объяснимый отчёт. Итоговую оценку сохраняет Core, а не AI."""
-    return mock_scoring.score(request)
+    return rule_scoring.score(request)

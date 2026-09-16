@@ -12,7 +12,7 @@ from pydantic import Field
 
 from app.schemas.common import CamelModel, OpenCamelModel, ResponseMeta
 from app.schemas.dialogue import DialogueTurn
-from app.schemas.scenario import Scenario
+from app.schemas.scenario import IncidentSigns, Scenario
 
 
 class CriterionStatus(str, Enum):
@@ -28,12 +28,20 @@ class Severity(str, Enum):
 
 
 class SubmittedCard(OpenCamelModel):
-    """Карточка происшествия, заполненная обучающимся."""
+    """Карточка происшествия, заполненная обучающимся.
+
+    Поля названы так же, как в OperatorCard на стороне Kotlin Core: это один
+    и тот же объект, и расхождение в именах всплыло бы на интеграции.
+
+    Признаки происшествия обязательны по смыслу: в АРМ-112 оператор выбирает
+    именно их, а итоговый тип и список служб вычисляются из комбинации.
+    """
 
     incident_type: Optional[str] = None
+    signs: Optional[IncidentSigns] = None
     address: Optional[str] = None
-    services: List[str] = Field(default_factory=list)
-    fields: Dict[str, Any] = Field(default_factory=dict)
+    required_services: List[str] = Field(default_factory=list)
+    facts: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionLogItem(CamelModel):

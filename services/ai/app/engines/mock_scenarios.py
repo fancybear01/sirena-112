@@ -39,16 +39,22 @@ BASE_CRITERIA: List[Dict[str, Any]] = [
         "critical": True,
     },
     {
-        "code": "INCIDENT_TYPE",
-        "description": "Верно определил тип происшествия",
+        "code": "SIGNS",
+        "description": "Верно выбрал признаки происшествия",
         "weight": 3.0,
         "critical": True,
+    },
+    {
+        "code": "INCIDENT_TYPE",
+        "description": "Верно определил итоговый тип происшествия",
+        "weight": 2.0,
+        "critical": False,
     },
     {
         "code": "VICTIMS",
         "description": "Уточнил наличие пострадавших",
         "weight": 2.0,
-        "critical": False,
+        "critical": True,
     },
     {
         "code": "SERVICES",
@@ -56,13 +62,9 @@ BASE_CRITERIA: List[Dict[str, Any]] = [
         "weight": 2.0,
         "critical": False,
     },
-    {
-        "code": "TIMING",
-        "description": "Уложился в норматив времени",
-        "weight": 1.0,
-        "critical": False,
-    },
 ]
+# Норматив времени намеренно не критерий, а штраф: иначе одно и то же
+# нарушение наказывалось бы дважды - потерей баллов и вычетом.
 
 CATALOGUE: List[Dict[str, Any]] = [
     {
