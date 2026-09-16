@@ -100,3 +100,29 @@ curl http://localhost:8080/api/teacher/sessions/SESSION_ID/report
 
 Отчёт содержит итоговый `score`, критерии с баллами, `errors` и
 `recommendations`. Пустая карточка отклоняется с HTTP 400.
+
+## События сессии и mock-интеграции
+
+Frontend может подписаться на события конкретной сессии:
+
+```text
+ws://localhost:8080/ws/sessions/{sessionId}/events
+```
+
+При подключении Core сначала отправляет сохранённую историю, затем каждое
+новое событие. Сообщения — JSON-конверты из `contracts/events.md`, например:
+
+```json
+{
+  "eventId": "0199d7b6-0000-7000-8000-000000000001",
+  "sessionId": "0199d7b6-0000-7000-8000-000000000002",
+  "type": "operator.card_updated",
+  "timestamp": "2026-09-15T12:00:05.420Z",
+  "source": "core",
+  "payload": {}
+}
+```
+
+`AiClient` и `MediaClient` представлены `MockAiClient` и `MockMediaClient`.
+Они не выполняют сетевых вызовов, поэтому Core запускается без Python AI и Go
+Media; реальные адаптеры можно подключить через те же интерфейсы.

@@ -14,8 +14,8 @@ import ru.sirena112.core.domain.RubricCriterion
 import ru.sirena112.core.domain.Scenario
 import ru.sirena112.core.domain.ScenarioRepository
 import ru.sirena112.core.domain.SessionState
-import ru.sirena112.core.domain.SessionEventRepository
 import ru.sirena112.core.domain.SessionMode
+import ru.sirena112.core.domain.SessionEventRepository
 import ru.sirena112.core.domain.TrainingSession
 import ru.sirena112.core.domain.TrainingSessionRepository
 import ru.sirena112.core.domain.TrainingSessionService
@@ -70,7 +70,6 @@ data class SessionView(
 class CardTrainingFacade(
     private val scenarioRepository: ScenarioRepository,
     private val sessionRepository: TrainingSessionRepository,
-    private val eventRepository: SessionEventRepository,
     private val sessionService: TrainingSessionService
 ) {
     private val reports = java.util.concurrent.ConcurrentHashMap<UUID, SessionReport>()
@@ -104,6 +103,7 @@ class CardTrainingFacade(
     fun submit(sessionId: UUID): SessionReport {
         val session = requireSession(sessionId)
         validateCard(session)
+        sessionService.submitAnswer(session.id)
         if (session.state == SessionState.ACTIVE) {
             sessionService.complete(session.id)
         }
