@@ -1,0 +1,181 @@
+{
+  "sampleRate": 16000,
+  "channels": 1,
+  "items": [
+    {
+      "file": "01_address_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 6.06,
+      "text": "Берзарина, двадцать один, корпус один, третий подъезд",
+      "keyParts": [
+        "берзарина",
+        "21",
+        "корпус 1",
+        "подъезд 3"
+      ]
+    },
+    {
+      "file": "01_address_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 4.35,
+      "text": "Берзарина, двадцать один, корпус один, третий подъезд",
+      "keyParts": [
+        "берзарина",
+        "21",
+        "корпус 1",
+        "подъезд 3"
+      ]
+    },
+    {
+      "file": "02_parkovaya_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 5.12,
+      "text": "Пятьдесят вторая Парковая, дом три, корпус два",
+      "keyParts": [
+        "52",
+        "парковая",
+        "дом 3",
+        "корпус 2"
+      ]
+    },
+    {
+      "file": "02_parkovaya_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 4.78,
+      "text": "Пятьдесят вторая Парковая, дом три, корпус два",
+      "keyParts": [
+        "52",
+        "парковая",
+        "дом 3",
+        "корпус 2"
+      ]
+    },
+    {
+      "file": "03_phone_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 6.23,
+      "text": "Девять один шесть, сто двадцать шесть, тридцать четыре, семьдесят один",
+      "keyParts": [
+        "916",
+        "126",
+        "34",
+        "71"
+      ]
+    },
+    {
+      "file": "03_phone_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 4.69,
+      "text": "Девять один шесть, сто двадцать шесть, тридцать четыре, семьдесят один",
+      "keyParts": [
+        "916",
+        "126",
+        "34",
+        "71"
+      ]
+    },
+    {
+      "file": "04_long_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 5.89,
+      "text": "Волгоградский проспект в сторону области, остановка Завод Спецэлектрод",
+      "keyParts": [
+        "волгоградский проспект",
+        "спецэлектрод"
+      ]
+    },
+    {
+      "file": "04_long_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 5.29,
+      "text": "Волгоградский проспект в сторону области, остановка Завод Спецэлектрод",
+      "keyParts": [
+        "волгоградский проспект",
+        "спецэлектрод"
+      ]
+    },
+    {
+      "file": "05_help_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 4.78,
+      "text": "Помогите, горит! Второй подъезд, быстрее!",
+      "keyParts": [
+        "горит",
+        "второй подъезд"
+      ]
+    },
+    {
+      "file": "05_help_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 4.1,
+      "text": "Помогите, горит! Второй подъезд, быстрее!",
+      "keyParts": [
+        "горит",
+        "второй подъезд"
+      ]
+    },
+    {
+      "file": "06_victim_calm.wav",
+      "speaker": "polina",
+      "mood": "calm",
+      "seconds": 4.86,
+      "text": "Трое пострадавших, не блокированы, течёт бензин",
+      "keyParts": [
+        "трое",
+        "пострадавших",
+        "бензин"
+      ]
+    },
+    {
+      "file": "06_victim_panic.wav",
+      "speaker": "polina",
+      "mood": "panic",
+      "seconds": 3.75,
+      "text": "Трое пострадавших, не блокированы, течёт бензин",
+      "keyParts": [
+        "трое",
+        "пострадавших",
+        "бензин"
+      ]
+    }
+  ],
+  "operatorItems": [
+    {
+      "file": "07_op_greeting.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 4.44,
+      "text": "Служба 112, здравствуйте, слушаю вас",
+      "expectedIntent": "",
+      "expectedTone": "GREETING"
+    },
+    {
+      "file": "08_op_address.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 3.33,
+      "text": "Назовите адрес происшествия",
+      "expectedIntent": "ADDRESS",
+      "expectedTone": ""
+    },
+    {
+      "file": "09_op_victims.wav",
+      "speaker": "polina",
+      "role": "operator",
+      "seconds": 3.5,
+      "text": "Пострадавшие есть, помощь нужна?",
+      "expectedIntent": "VICTIMS",
+      "expectedTone": ""
+    }
+  ]
+}
