@@ -45,3 +45,4 @@ recordings/
 logs/
 backups/
 tmp/
+/agent.md
