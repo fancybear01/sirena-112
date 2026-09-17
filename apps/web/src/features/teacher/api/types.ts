@@ -1,49 +1,22 @@
-export type ScenarioDifficulty = 'BASIC' | 'INTERMEDIATE' | 'ADVANCED';
+import type {
+  OperatorCard,
+  Scenario,
+  ScenarioDifficulty as CoreScenarioDifficulty,
+  Session,
+  SessionState as CoreSessionState,
+} from '../../../api/types';
+
+export type ScenarioDifficulty = CoreScenarioDifficulty;
 export type ScenarioStatus = 'READY' | 'DRAFT';
+export type SessionState = CoreSessionState;
 
-// Mirrors components.schemas.Scenario from contracts/openapi.yaml.
-export type Scenario = {
-  id: string;
-  version: number;
-  title: string;
-  category: string;
-  difficulty: ScenarioDifficulty;
-  profile: string;
-  timeLimitSeconds?: number;
-  groundTruth: Record<string, unknown>;
-  rubric: Record<string, unknown>;
-};
-
+// Readiness is a teacher-list presentation field; it is not part of Scenario in OpenAPI yet.
 export type TeacherScenario = Scenario & {
   status: ScenarioStatus;
 };
 
-export type SessionState =
-  | 'CREATED'
-  | 'READY'
-  | 'RINGING'
-  | 'ACTIVE'
-  | 'COMPLETED'
-  | 'SCORING'
-  | 'SCORED'
-  | 'FAILED';
-
-export type OperatorCard = {
-  incidentType: string | null;
-  signs: Record<string, unknown> | null;
-  address: string | null;
-  requiredServices: string[];
-  facts: Record<string, unknown>;
-};
-
-// Base fields mirror components.schemas.Session from contracts/openapi.yaml.
-export type TeacherSession = {
-  id: string;
-  scenarioId: string;
-  mode: 'CARD';
-  state: SessionState;
+export type TeacherSession = Omit<Session, 'card' | 'startedAt' | 'endedAt'> & {
   card: OperatorCard;
-  report: null;
   startedAt: string | null;
   endedAt: string | null;
 };

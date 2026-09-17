@@ -1,4 +1,10 @@
-import { scenarioFixtures } from './scenarios.fixture';
+import { scenarioFixtures, scenarioStatusFixtures } from './scenarios.fixture';
+import { ApiError } from '../../../api/errors';
+import {
+  getBrowserStorage,
+  studentDraftStorageKey,
+  teacherSessionStorageKey,
+} from '../../../api/mockStorage';
 import type { TeacherApi, TeacherScenario, TeacherSession } from './types';
 
 type MockOptions = {
@@ -7,8 +13,6 @@ type MockOptions = {
   failScenarios?: boolean;
   storage?: Storage | null;
 };
-
-export const teacherSessionStorageKey = 'sirena-112:teacher-session';
 
 function createEmptyCard(): TeacherSession['card'] {
   return {
@@ -22,14 +26,6 @@ function createEmptyCard(): TeacherSession['card'] {
 
 function makeUuid() {
   return crypto.randomUUID();
-}
-
-function getBrowserStorage(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage;
-  } catch {
-    return null;
-  }
 }
 
 function isStoredSession(value: unknown): value is TeacherSession {
@@ -46,7 +42,10 @@ function isStoredSession(value: unknown): value is TeacherSession {
 }
 
 export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
-  const scenarios = options.scenarios ?? scenarioFixtures;
+  const scenarios = options.scenarios ?? scenarioFixtures.map((scenario): TeacherScenario => ({
+    ...scenario,
+    status: scenarioStatusFixtures[scenario.id] ?? 'READY',
+  }));
   const delayMs = options.delayMs ?? 250;
   const storage = options.storage === undefined ? getBrowserStorage() : options.storage;
 
@@ -91,7 +90,7 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
     async getScenarios() {
       if (options.failScenarios) {
         await respond(null);
-        throw new Error('Mock scenarios request failed');
+        throw new ApiError('Проверьте соединение и повторите попытку.');
       }
       return respond(scenarios);
     },
@@ -103,7 +102,7 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
     async launchSession(scenarioId) {
       const scenario = scenarios.find((item) => item.id === scenarioId);
       if (!scenario || scenario.status !== 'READY') {
-        throw new Error('Scenario is not ready');
+        throw new ApiError('Сценарий не готов к запуску.', { status: 409 });
       }
 
       const startedAt = new Date().toISOString();
@@ -117,6 +116,11 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         startedAt,
         endedAt: null,
       };
+      try {
+        storage?.removeItem(studentDraftStorageKey);
+      } catch {
+        // A blocked storage must not prevent launching an in-memory mock session.
+      }
       persistSession(session);
       return respond(session);
     },
@@ -124,7 +128,7 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
     async stopSession(sessionId) {
       const session = currentSession;
       if (!session || session.id !== sessionId || session.state !== 'ACTIVE') {
-        throw new Error('Active session not found');
+        throw new ApiError('Активная сессия не найдена.', { status: 404 });
       }
 
       const completed: TeacherSession = {

@@ -26,9 +26,10 @@ import {
   IconShieldCheck,
   IconX,
 } from '@tabler/icons-react';
+import { getApiErrorMessage } from '../../api/errors';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { incidentTypeOptions, serviceOptions } from './api/student.fixture';
-import { studentMockApi } from './api/studentMockApi';
+import { studentApi } from './api/studentApi';
 import type {
   StudentApi,
   StudentAssignment,
@@ -174,11 +175,11 @@ function ReportView({ report }: { report: StudentSessionReport }) {
   );
 }
 
-export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
+export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   const [assignment, setAssignment] = useState<StudentAssignment | null>(null);
   const [card, setCard] = useState<StudentOperatorCard | null>(null);
   const [report, setReport] = useState<StudentSessionReport | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [errors, setErrors] = useState<CardErrors>({});
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -186,7 +187,7 @@ export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
   const saveRevision = useRef(0);
 
   const loadAssignment = useCallback(async () => {
-    setLoadError(false);
+    setLoadError('');
     setAssignment(null);
     try {
       const loaded = await api.getAssignment();
@@ -200,8 +201,8 @@ export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
         || loaded.session.card.facts.description,
       );
       setSaveStatus(hasDraft ? 'saved' : 'idle');
-    } catch {
-      setLoadError(true);
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error, 'Не удалось получить задание.'));
     }
   }, [api]);
 
@@ -233,8 +234,11 @@ export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
       .then(() => {
         if (revision === saveRevision.current) setSaveStatus('saved');
       })
-      .catch(() => {
-        if (revision === saveRevision.current) setSaveStatus('error');
+      .catch((error: unknown) => {
+        if (revision === saveRevision.current) {
+          setSaveStatus('error');
+          setSubmitError(getApiErrorMessage(error, 'Не удалось сохранить черновик.'));
+        }
       });
   }
 
@@ -253,8 +257,11 @@ export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
     try {
       const result = await api.submitCard(assignment.session.id, card);
       setReport(result);
-    } catch {
-      setSubmitError('Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.');
+    } catch (error) {
+      setSubmitError(getApiErrorMessage(
+        error,
+        'Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.',
+      ));
     } finally {
       setIsSubmitting(false);
     }
@@ -264,7 +271,7 @@ export function StudentPage({ api = studentMockApi }: { api?: StudentApi }) {
     return (
       <ErrorState
         title="Не удалось получить задание"
-        description="Повторите попытку — сохранённый черновик останется на этом устройстве."
+        description={loadError}
         onRetry={() => void loadAssignment()}
       />
     );
