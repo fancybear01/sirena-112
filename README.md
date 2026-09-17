@@ -42,7 +42,10 @@
 
 ```bash
 docker compose up -d postgres
+docker compose up -d --build asterisk
 ```
+
+Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).
 
 Приложения будут добавляться в Compose по мере появления рабочих Dockerfile.
 
