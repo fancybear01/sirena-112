@@ -18,5 +18,31 @@ services:
       retries: 10
     restart: unless-stopped
 
+  asterisk:
+    build:
+      context: ./infra/asterisk
+    environment:
+      ARI_USERNAME: ${ASTERISK_ARI_USER:-media}
+      ARI_PASSWORD: ${ASTERISK_ARI_PASSWORD:-change-me-ari}
+      SIP_1001_PASSWORD: ${ASTERISK_SIP_1001_PASSWORD:-change-me-1001}
+      SIP_1002_PASSWORD: ${ASTERISK_SIP_1002_PASSWORD:-change-me-1002}
+      EXTERNAL_ADDRESS: ${ASTERISK_EXTERNAL_ADDRESS:-127.0.0.1}
+    ports:
+      - "${ASTERISK_SIP_PORT:-5060}:5060/udp"
+      - "${ASTERISK_SIP_PORT:-5060}:5060/tcp"
+      - "${ASTERISK_HTTP_PORT:-8088}:8088/tcp"
+      - "${ASTERISK_RTP_PORT_START:-10000}-${ASTERISK_RTP_PORT_END:-10100}:10000-10100/udp"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf -u \"$$ARI_USERNAME:$$ARI_PASSWORD\" http://127.0.0.1:8088/ari/asterisk/info >/dev/null",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+
 volumes:
   postgres-data:
