@@ -27,6 +27,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 function renderAt(path: string) {
@@ -43,7 +44,7 @@ describe('frontend routes', () => {
   it.each([
     ['/login', 'Выберите роль'],
     ['/admin', 'Администрирование'],
-    ['/teacher', 'Занятия'],
+    ['/teacher', 'Сценарии'],
     ['/student', 'Мои задания'],
   ])('renders %s directly', (path, heading) => {
     renderAt(path);
@@ -52,7 +53,7 @@ describe('frontend routes', () => {
 
   it.each([
     ['администратор', 'Администрирование'],
-    ['преподаватель', 'Занятия'],
+    ['преподаватель', 'Сценарии'],
     ['обучающийся', 'Мои задания'],
   ])('mock login opens the %s workspace', async (label, heading) => {
     renderAt('/login');
