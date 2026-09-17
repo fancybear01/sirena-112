@@ -45,20 +45,20 @@ describe('frontend routes', () => {
     ['/login', 'Выберите роль'],
     ['/admin', 'Администрирование'],
     ['/teacher', 'Сценарии'],
-    ['/student', 'Мои задания'],
-  ])('renders %s directly', (path, heading) => {
+    ['/student', 'Моё задание'],
+  ])('renders %s directly', async (path, heading) => {
     renderAt(path);
-    expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
   });
 
   it.each([
     ['администратор', 'Администрирование'],
     ['преподаватель', 'Сценарии'],
-    ['обучающийся', 'Мои задания'],
+    ['обучающийся', 'Моё задание'],
   ])('mock login opens the %s workspace', async (label, heading) => {
     renderAt('/login');
     await userEvent.click(screen.getByRole('button', { name: `Войти как ${label}` }));
-    expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
   });
 
   it('shows a 404 for an unknown path', () => {

@@ -160,14 +160,160 @@ body { margin: 0; min-width: 320px; }
   font-size: 13px;
 }
 
+.student-page { color: #20334e; }
+.student-page > div:first-child h1 {
+  color: #1d2c43;
+  font-size: 31px;
+  letter-spacing: -.04em;
+}
+.page-eyebrow {
+  margin-bottom: 4px;
+  color: #397cbd;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.save-indicator {
+  min-height: 32px;
+  padding: 7px 11px;
+  color: #62748a;
+  background: #eef2f7;
+  border-radius: 999px;
+}
+.save-indicator--saved { color: #197b62; background: #e9f7f2; }
+.save-indicator--error { color: #c13d4d; background: #fff0f2; }
+.assignment-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px;
+  align-items: center;
+  overflow: hidden;
+  border-color: #dce7f1;
+  background:
+    radial-gradient(circle at 92% 20%, rgba(127, 180, 225, .16), transparent 30%),
+    linear-gradient(135deg, #fff 45%, #f4f9fd);
+}
+.assignment-brief h2,
+.incident-form h2,
+.report-hero h2 { color: #20334e; font-size: 24px; letter-spacing: -.03em; }
+.assignment-brief__profile { max-width: 720px; line-height: 1.65; }
+.assignment-timer {
+  min-width: 143px;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 14px 16px;
+  color: #397cbd;
+  background: rgba(255, 255, 255, .88);
+  border: 1px solid #dce8f3;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(44, 88, 126, .06);
+}
+.assignment-timer--low { color: #c44845; border-color: #f1c9c7; background: #fff8f7; }
+.assignment-timer__value {
+  color: #20334e;
+  font-size: 24px;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+}
+.incident-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  border-color: #e2e8f0;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(35, 59, 89, .045);
+}
+.incident-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.service-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.service-options [data-checked] {
+  border-color: #78aedd;
+  background: #f1f7fd;
+}
+.service-options label { cursor: pointer; }
+.student-report h3 { color: #283b55; font-size: 17px; }
+.report-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  border-color: #dce8e4;
+  background: linear-gradient(135deg, #fff, #f4fbf8);
+}
+.report-score {
+  width: 126px;
+  height: 126px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 10px solid #caeee2;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #e0eee9;
+}
+.report-score__value { color: #16785f; font-size: 44px; font-weight: 780; line-height: 1; }
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.report-grid > div { border-color: #e2e8f0; background: #fff; }
+.criterion-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 11px;
+  background: #f6faf8;
+}
+.criterion-row__success { color: #168568; margin-top: 1px; }
+.criterion-row--error { color: #a93545; background: #fff5f6; }
+.recommendations {
+  border-color: #e1e9f1;
+  background: linear-gradient(135deg, #fbfdff 0%, #f6f9fc 100%);
+}
+.recommendations__icon { flex: 0 0 auto; }
+.recommendations__content { min-width: 0; }
+.student-report .recommendations__title {
+  color: #344a62;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.recommendations__list { margin: 6px 0 0; padding-left: 18px; }
+.recommendations__list li { line-height: 1.5; }
+.recommendations__list li::marker { color: #7a9fbe; }
+
 @media (max-width: 600px) {
   .content-wrap { padding-top: 12px; }
   .workspace-page h1 { font-size: 26px; }
   .state-placeholder { min-height: 250px; }
   .teacher-page > div:first-child h1 { font-size: 26px; }
+  .student-page > div:first-child h1 { font-size: 26px; }
   .difficulty-filter { width: 100%; overflow-x: auto; }
   .teacher-layout { grid-template-columns: 1fr; }
   .teacher-panel-slot--session { min-height: 0; }
   .teacher-panel-slot--session .session-panel { position: static; transform: none; }
   .session-meta { grid-template-columns: 1fr; }
+  .assignment-brief { grid-template-columns: 1fr; gap: 20px; }
+  .assignment-timer { width: 100%; justify-content: center; }
+  .incident-form__grid,
+  .service-options,
+  .report-grid { grid-template-columns: 1fr; }
+  .incident-form__footer { align-items: stretch; }
+  .incident-form__footer button { width: 100%; }
+  .report-hero { grid-template-columns: 1fr; justify-items: center; text-align: center; }
 }
