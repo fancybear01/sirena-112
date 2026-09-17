@@ -13,8 +13,10 @@ import {
   UnstyledButton,
 } from '@mantine/core';
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
+import { getApiErrorMessage } from '../../api/errors';
+import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
-import { teacherMockApi } from './api/teacherMockApi';
+import { teacherApi } from './api/teacherApi';
 import type {
   ScenarioDifficulty,
   TeacherApi,
@@ -66,12 +68,12 @@ function useSessionTimer(session: TeacherSession | null) {
   return formatDuration(elapsedSeconds);
 }
 
-export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
+export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
   const [scenarios, setScenarios] = useState<TeacherScenario[] | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('ALL');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [session, setSession] = useState<TeacherSession | null>(null);
-  const [listError, setListError] = useState(false);
+  const [listError, setListError] = useState('');
   const [operationError, setOperationError] = useState('');
   const [isLaunching, setIsLaunching] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -79,7 +81,7 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
   const timer = useSessionTimer(session);
 
   const loadScenarios = useCallback(async () => {
-    setListError(false);
+    setListError('');
     setScenarios(null);
     try {
       const [items, savedSession] = await Promise.all([
@@ -94,8 +96,8 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
         }
         return current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null;
       });
-    } catch {
-      setListError(true);
+    } catch (error) {
+      setListError(getApiErrorMessage(error, 'Не удалось загрузить сценарии.'));
     }
   }, [api]);
 
@@ -124,8 +126,8 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
     setIsLaunching(true);
     try {
       setSession(await api.launchSession(selectedScenario.id));
-    } catch {
-      setOperationError('Не удалось запустить занятие. Попробуйте ещё раз.');
+    } catch (error) {
+      setOperationError(getApiErrorMessage(error, 'Не удалось запустить занятие. Попробуйте ещё раз.'));
     } finally {
       setIsLaunching(false);
     }
@@ -137,8 +139,8 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
     setIsStopping(true);
     try {
       setSession(await api.stopSession(session.id));
-    } catch {
-      setOperationError('Не удалось завершить занятие. Попробуйте ещё раз.');
+    } catch (error) {
+      setOperationError(getApiErrorMessage(error, 'Не удалось завершить занятие. Попробуйте ещё раз.'));
     } finally {
       setIsStopping(false);
     }
@@ -150,8 +152,8 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
     try {
       await api.clearSession();
       setSession(null);
-    } catch {
-      setOperationError('Не удалось очистить сессию. Попробуйте ещё раз.');
+    } catch (error) {
+      setOperationError(getApiErrorMessage(error, 'Не удалось очистить сессию. Попробуйте ещё раз.'));
     } finally {
       setIsClearing(false);
     }
@@ -173,7 +175,7 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
       {listError ? (
         <ErrorState
           title="Не удалось загрузить сценарии"
-          description="Проверьте соединение и повторите попытку."
+          description={listError}
           onRetry={() => void loadScenarios()}
         />
       ) : scenarios === null ? (
@@ -212,7 +214,7 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                     <Group justify="space-between" gap="sm" wrap="nowrap">
                       <div>
                         <Text fw={650}>{scenario.title}</Text>
-                        <Text size="sm" c="dimmed" mt={3}>{scenario.category}</Text>
+                        <Text size="sm" c="dimmed" mt={3}>{getScenarioCategoryLabel(scenario.category)}</Text>
                       </div>
                       <Stack gap={5} align="flex-end">
                         <Badge color={scenario.status === 'READY' ? 'teal' : 'gray'} variant="light">
@@ -243,7 +245,7 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                       <div className="session-meta">
                         <div>
                           <Text size="xs" c="dimmed">Категория</Text>
-                          <Text size="sm" fw={600} mt={3}>{sessionScenario.category}</Text>
+                          <Text size="sm" fw={600} mt={3}>{getScenarioCategoryLabel(sessionScenario.category)}</Text>
                         </div>
                         <div>
                           <Text size="xs" c="dimmed">Сложность</Text>
@@ -310,7 +312,7 @@ export function TeacherPage({ api = teacherMockApi }: { api?: TeacherApi }) {
                   <Group justify="space-between">
                     <div>
                       <Text size="xs" c="dimmed">Категория</Text>
-                      <Text size="sm" fw={600} mt={3}>{selectedScenario.category}</Text>
+                      <Text size="sm" fw={600} mt={3}>{getScenarioCategoryLabel(selectedScenario.category)}</Text>
                     </div>
                     <div>
                       <Text size="xs" c="dimmed">Лимит времени</Text>

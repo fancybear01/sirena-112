@@ -1,4 +1,12 @@
 import { assignedScenarioFixture } from './student.fixture';
+import { ApiError } from '../../../api/errors';
+import {
+  getBrowserStorage,
+  studentDraftStorageKey,
+  teacherSessionStorageKey,
+} from '../../../api/mockStorage';
+import type { Session } from '../../../api/types';
+import { scenarioFixtures } from '../../teacher/api/scenarios.fixture';
 import type {
   ScoreCriterion,
   StudentApi,
@@ -17,14 +25,15 @@ type MockOptions = {
 };
 
 type StoredStudentState = {
+  sessionId: string;
+  scenarioId: string;
   startedAt: string;
+  endedAt: string | null;
   card: StudentOperatorCard;
   report: StudentSessionReport | null;
 };
 
-export const studentDraftStorageKey = 'sirena-112:student-assignment';
-
-const sessionId = 'a13e08ea-220f-458a-95f6-95b7c3a3f14c';
+const fallbackSessionId = 'a13e08ea-220f-458a-95f6-95b7c3a3f14c';
 
 export function createEmptyStudentCard(): StudentOperatorCard {
   return {
@@ -36,23 +45,18 @@ export function createEmptyStudentCard(): StudentOperatorCard {
   };
 }
 
-function getBrowserStorage(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
 function isStoredState(value: unknown): value is StoredStudentState {
   if (!value || typeof value !== 'object') return false;
   const state = value as Partial<StoredStudentState>;
-  return typeof state.startedAt === 'string'
+  return typeof state.sessionId === 'string'
+    && typeof state.scenarioId === 'string'
+    && typeof state.startedAt === 'string'
+    && (state.endedAt === null || typeof state.endedAt === 'string')
     && Boolean(state.card && typeof state.card === 'object')
     && (state.report === null || Boolean(state.report && typeof state.report === 'object'));
 }
 
-function scoreCard(card: StudentOperatorCard): StudentSessionReport {
+function scoreCard(card: StudentOperatorCard, sessionId: string): StudentSessionReport {
   const description = String(card.facts.description ?? '').trim().toLocaleLowerCase('ru-RU');
   const normalizedAddress = (card.address ?? '').trim().toLocaleLowerCase('ru-RU');
   const hasService = (service: string) => card.requiredServices.includes(service);
@@ -143,23 +147,57 @@ export function createStudentMockApi(options: MockOptions = {}): StudentApi {
   const storage = options.storage === undefined ? getBrowserStorage() : options.storage;
   const delayMs = options.delayMs ?? 350;
 
-  function readState(): StoredStudentState {
+  function readTeacherSession(): Session | null {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem(teacherSessionStorageKey);
+      if (!raw) return null;
+      const value = JSON.parse(raw) as Partial<Session>;
+      return typeof value.id === 'string' && typeof value.scenarioId === 'string'
+        && value.state === 'ACTIVE' ? value as Session : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readState(sessionId: string, scenarioId: string, startedAt: string): StoredStudentState {
     if (storage) {
       try {
         const raw = storage.getItem(studentDraftStorageKey);
         if (raw) {
           const parsed: unknown = JSON.parse(raw);
-          if (isStoredState(parsed)) return parsed;
+          if (isStoredState(parsed) && parsed.sessionId === sessionId) return parsed;
           storage.removeItem(studentDraftStorageKey);
         }
       } catch {
         // Unavailable or corrupted storage falls back to an empty in-memory assignment.
       }
     }
-    return { startedAt: new Date().toISOString(), card: createEmptyStudentCard(), report: null };
+    return {
+      sessionId,
+      scenarioId,
+      startedAt,
+      endedAt: null,
+      card: createEmptyStudentCard(),
+      report: null,
+    };
   }
 
-  let state = readState();
+  let state: StoredStudentState | null = null;
+
+  function getContext() {
+    const teacherSession = readTeacherSession();
+    const sessionId = teacherSession?.id ?? fallbackSessionId;
+    const scenarioId = teacherSession?.scenarioId ?? assignedScenarioFixture.id;
+    const startedAt = teacherSession?.startedAt || new Date().toISOString();
+    const scenario = scenarioId === assignedScenarioFixture.id
+      ? assignedScenarioFixture
+      : scenarioFixtures.find((item) => item.id === scenarioId) ?? assignedScenarioFixture;
+    if (!state || state.sessionId !== sessionId) {
+      state = readState(sessionId, scenarioId, startedAt);
+    }
+    return { scenario, state };
+  }
 
   function persist(next: StoredStudentState) {
     state = structuredClone(next);
@@ -171,16 +209,16 @@ export function createStudentMockApi(options: MockOptions = {}): StudentApi {
     }
   }
 
-  function makeSession(): StudentSession {
+  function makeSession(current: StoredStudentState): StudentSession {
     return {
-      id: sessionId,
-      scenarioId: assignedScenarioFixture.id,
+      id: current.sessionId,
+      scenarioId: current.scenarioId,
       mode: 'CARD',
-      state: state.report ? 'SCORED' : 'ACTIVE',
-      card: structuredClone(state.card),
-      report: structuredClone(state.report),
-      startedAt: state.startedAt,
-      endedAt: state.report ? new Date().toISOString() : null,
+      state: current.report ? 'SCORED' : 'ACTIVE',
+      card: structuredClone(current.card),
+      report: structuredClone(current.report),
+      startedAt: current.startedAt,
+      endedAt: current.endedAt,
     };
   }
 
@@ -195,29 +233,36 @@ export function createStudentMockApi(options: MockOptions = {}): StudentApi {
     async getAssignment(): Promise<StudentAssignment> {
       if (options.failLoad) {
         await respond(null);
-        throw new Error('Mock assignment request failed');
+        throw new ApiError('Повторите попытку — сохранённый черновик останется на этом устройстве.');
       }
-      return respond({ scenario: assignedScenarioFixture, session: makeSession() });
+      const current = getContext();
+      return respond({ scenario: current.scenario, session: makeSession(current.state) });
     },
 
     async saveCard(requestSessionId, card) {
-      if (requestSessionId !== sessionId || state.report) throw new Error('Active session not found');
+      const current = getContext().state;
+      if (requestSessionId !== current.sessionId || current.report) {
+        throw new ApiError('Активная сессия не найдена.', { status: 404 });
+      }
       if (options.failSave) {
         await respond(null);
-        throw new Error('Mock card save failed');
+        throw new ApiError('Не удалось сохранить черновик.');
       }
-      persist({ ...state, card, report: null });
-      return respond(makeSession());
+      persist({ ...current, card, report: null });
+      return respond(makeSession(state!));
     },
 
     async submitCard(requestSessionId, card) {
-      if (requestSessionId !== sessionId || state.report) throw new Error('Active session not found');
+      const current = getContext().state;
+      if (requestSessionId !== current.sessionId || current.report) {
+        throw new ApiError('Активная сессия не найдена.', { status: 404 });
+      }
       if (options.failSubmit) {
         await respond(null);
-        throw new Error('Mock submit failed');
+        throw new ApiError('Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.');
       }
-      const report = scoreCard(card);
-      persist({ ...state, card, report });
+      const report = scoreCard(card, current.sessionId);
+      persist({ ...current, card, report, endedAt: new Date().toISOString() });
       await respond(null);
       return structuredClone(report);
     },
