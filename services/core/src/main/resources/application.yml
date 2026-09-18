@@ -1,6 +1,11 @@
 spring:
   application:
     name: sirena-core
+  jackson:
+    deserialization:
+      # Тела запросов строгие: вычисляемые поля карточки (incidentType, службы)
+      # не могут быть подменены клиентом и попадают в 400.
+      fail-on-unknown-properties: true
   mvc:
     throw-exception-if-no-handler-found: true
   web:

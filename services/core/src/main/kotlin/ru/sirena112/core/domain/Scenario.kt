@@ -1,5 +1,10 @@
 package ru.sirena112.core.domain
 
+import ru.sirena112.core.classifier.CardCalculation
+import ru.sirena112.core.classifier.OperatorCardInput
+import ru.sirena112.core.classifier.ResponseScenarioStatus
+import ru.sirena112.core.classifier.RoutedService
+import ru.sirena112.core.classifier.ServiceRef
 import java.util.UUID
 
 /** Группа происшествия из актуального классификатора Системы 112. */
@@ -37,36 +42,41 @@ enum class Difficulty {
     ADVANCED
 }
 
-data class IncidentSigns(
-    val level1: String,
-    val level2: String? = null,
-    val level3: String? = null,
-    val additional: List<String> = emptyList()
-) {
-    init {
-        require(level1.isNotBlank()) { "Признак level1 не может быть пустым" }
-        require(additional.all { it.isNotBlank() }) { "Дополнительные признаки не могут быть пустыми" }
-        require(additional.size == additional.toSet().size) { "Дополнительные признаки не должны повторяться" }
-    }
-}
-
+/**
+ * Эталон по контракту 0.3 (GroundTruthV2 из contracts/scenario.schema.json):
+ * вычислен из каталога классификатора, включая условные routing rules.
+ * Список служб не задаётся вручную, а соответствует [RoutedService] каталога.
+ */
 data class GroundTruth(
+    val classifierVersion: String,
+    val classifierCode: String,
     val incidentType: String,
-    val ekpCode: String? = null,
-    val signs: IncidentSigns? = null,
-    val address: String? = null,
-    val requiredServices: Set<String> = emptySet(),
-    val facts: Map<String, Any?> = emptyMap()
+    val ekp35IncidentType: String?,
+    val responseScenarioCode: String?,
+    val responseScenarioStatus: ResponseScenarioStatus,
+    val mainServices: List<ServiceRef>,
+    val requiredServices: List<RoutedService>,
+    val expectedInput: OperatorCardInput
 ) {
     init {
-        require(incidentType.isNotBlank()) { "Тип происшествия не может быть пустым" }
-        if (ekpCode != null) {
-            require(ekpCode.matches(Regex("^[0-9]{6,9}$"))) {
-                "Код ЕКП должен содержать от 6 до 9 цифр"
-            }
+        require(classifierVersion.isNotBlank()) { "Версия классификатора не может быть пустой" }
+        require(classifierCode.matches(Regex("^[0-9]{6,9}$"))) {
+            "Код классификатора должен содержать от 6 до 9 цифр"
         }
-        require(requiredServices.all { it.isNotBlank() }) { "Службы не могут быть пустыми" }
+        require(incidentType.isNotBlank()) { "Тип происшествия не может быть пустым" }
     }
+
+    /** Нормализованные ожидаемые ответы: идентификатор вопроса на варианты ответа. */
+    fun expectedAnswers(): Map<String, List<String>> =
+        expectedInput.incident?.answers?.associate { it.questionId to it.optionIds } ?: emptyMap()
+
+    fun expectedServiceIds(): Set<String> = requiredServices.map { it.id }.toSet()
+
+    /** Расчёт студента совпадает с эталоном по коду классификатора. */
+    fun matchesCalculation(calculation: CardCalculation?): Boolean =
+        calculation != null &&
+            calculation.status == ru.sirena112.core.classifier.CalculationStatus.RESOLVED &&
+            calculation.classifierCode == classifierCode
 }
 
 data class RubricCriterion(

@@ -3,6 +3,11 @@ package ru.sirena112.core.domain
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import ru.sirena112.core.classifier.OperatorCardInput
+import ru.sirena112.core.classifier.ResponseScenarioStatus
+import ru.sirena112.core.classifier.RoutedService
+import ru.sirena112.core.classifier.RoutingReason
+import ru.sirena112.core.classifier.ServiceRef
 import java.util.UUID
 
 class TrainingSessionServiceTest {
@@ -40,7 +45,19 @@ class TrainingSessionServiceTest {
         category = Category.FIRE,
         difficulty = Difficulty.BASIC,
         profile = "operator",
-        groundTruth = GroundTruth("пожар", requiredServices = setOf("Служба 101")),
+        groundTruth = GroundTruth(
+            classifierVersion = "046-2024-11-15",
+            classifierCode = "1010101",
+            incidentType = "пожар",
+            ekp35IncidentType = "пожар",
+            responseScenarioCode = "1_1",
+            responseScenarioStatus = ResponseScenarioStatus.CODE,
+            mainServices = listOf(ServiceRef("MCHS", "Служба 101 (МЧС)")),
+            requiredServices = listOf(
+                RoutedService("MCHS", "Служба 101 (МЧС)", listOf(RoutingReason("classifier.1010101.O", "Колонка O: пожар")))
+            ),
+            expectedInput = OperatorCardInput()
+        ),
         rubric = Rubric(listOf(RubricCriterion("ADDRESS", "Адрес", 1.0)))
     )
 }
