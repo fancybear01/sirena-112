@@ -156,7 +156,7 @@ def test_import_repeated_bytes_and_uncached_formula(tmp_path):
 
 
 @pytest.mark.parametrize("cell,value,match", [
-    ("M1", "Changed header", "headers changed"),
+    ("M1", "Changed header", "headers changed.*README"),
     ("E5", 9999999, "code differs"),
     ("E5", "=A5+1", "unexpected code formula"),
     ("N5", "ALIEN", "Unknown main service"),

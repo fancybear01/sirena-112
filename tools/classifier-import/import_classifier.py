@@ -151,8 +151,16 @@ def import_workbook(path):
         raw_rows = list(sheet.values)
         cached_rows = list(cached.values)
         headers = [list(row) for row in raw_rows[:3]]
-        if hashlib.sha256(encoded(headers)).hexdigest() != HEADER_SHA256:
-            raise ValueError("Classifier headers changed; review column mappings before importing")
+        actual_header_sha256 = hashlib.sha256(encoded(headers)).hexdigest()
+        if actual_header_sha256 != HEADER_SHA256:
+            raise ValueError(
+                "Classifier headers changed; refusing import. "
+                f"Expected header SHA-256 {HEADER_SHA256}, got {actual_header_sha256}. "
+                "A different hash means either a corrupted or edited file - restore the "
+                "official XLSX - or a new official classifier version: follow the update "
+                "checklist in tools/classifier-import/README.md (section "
+                "'Обновление классификатора') before changing HEADER_SHA256."
+            )
         if any(r.min_row > 3 for r in sheet.merged_cells.ranges):
             raise ValueError("Unexpected merged data cells; refusing implicit forward fill")
         columns, questions = build_columns(headers)
