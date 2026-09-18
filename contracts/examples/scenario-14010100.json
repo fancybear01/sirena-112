@@ -1,16 +1,16 @@
 {
-  "id": "80c14c89-f2b7-527a-bd6f-268cdc3d4a11",
+  "id": "92cd254b-562e-507c-a226-20120c9f9695",
   "version": 3,
-  "title": "задымление: мусоропровод",
-  "category": "FIRE",
+  "title": "Массовое отключение стационарной телефонной связи",
+  "category": "UTILITY",
   "difficulty": "BASIC",
   "timeLimitSeconds": 30,
-  "profile": "Синтетический интеграционный пример по классификатору. задымление: мусоропровод",
+  "profile": "Синтетический интеграционный пример по классификатору. Массовое отключение стационарной телефонной связи",
   "groundTruth": {
-    "classifierCode": "1050602",
-    "incidentType": "задымление: мусоропровод",
-    "ekp35IncidentType": "пожар: мусоропровод",
-    "responseScenarioCode": "1_9",
+    "classifierCode": "14010100",
+    "incidentType": "Массовое отключение стационарной телефонной связи",
+    "ekp35IncidentType": "Аварии на системах коммуникаций",
+    "responseScenarioCode": "14_2",
     "responseScenarioStatus": "CODE",
     "classifierVersion": "046-2024-11-15",
     "mainServices": [
@@ -21,33 +21,11 @@
     ],
     "requiredServices": [
       {
-        "id": "DGP_ARM112",
-        "displayName": "ДГП — АРМ-112",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.CL",
-            "message": "Колонка CL: карточка-112",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
-        "id": "DGP_INTEGRATION",
-        "displayName": "ДГП — интеграция",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.CK",
-            "message": "Колонка CK: задымление: мусоропровод",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
         "id": "FSO",
         "displayName": "ФСО",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.CH",
+            "ruleId": "classifier.14010100.CH",
             "message": "Колонка CH: карточка-112",
             "matchedInputIds": []
           }
@@ -58,8 +36,8 @@
         "displayName": "Гор. Хозяйство",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.AP",
-            "message": "Колонка AP: карточка-112",
+            "ruleId": "classifier.14010100.AP",
+            "message": "Колонка AP: Карточка-112",
             "matchedInputIds": []
           }
         ]
@@ -69,7 +47,7 @@
         "displayName": "Аппарат МЭРА",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.BH",
+            "ruleId": "classifier.14010100.BH",
             "message": "Колонка BH: карточка-112",
             "matchedInputIds": []
           }
@@ -80,8 +58,8 @@
         "displayName": "Служба 101 (МЧС)",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.O",
-            "message": "Колонка O: пожар: мусоропровод",
+            "ruleId": "classifier.14010100.O",
+            "message": "Колонка O: Аварии на электросетях",
             "matchedInputIds": [
               "routing.no-access"
             ]
@@ -89,45 +67,12 @@
         ]
       },
       {
-        "id": "MOSBEZ",
-        "displayName": "Департамент РБиПК (ГКУ МОСБЕЗ)",
+        "id": "MGTS",
+        "displayName": "МГТС",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.BF",
-            "message": "Колонка BF: Пожар",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
-        "id": "MOSBEZ_ANALYTICS",
-        "displayName": "МОСБЕЗ — МКП, Аналитика",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.BG",
-            "message": "Колонка BG: Пожар",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
-        "id": "MOSOBLGAZ",
-        "displayName": "Классификатор Мособлгаз",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.AK",
-            "message": "Колонка AK: карточка-112",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
-        "id": "MOSZHILINSPECTION",
-        "displayName": "Мосжилинспекция",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.CD",
-            "message": "Колонка CD: карточка-112",
+            "ruleId": "classifier.14010100.AV",
+            "message": "Колонка AV: карточка-112",
             "matchedInputIds": []
           }
         ]
@@ -137,9 +82,38 @@
         "displayName": "ГКУ НТУ",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.CG",
+            "ruleId": "classifier.14010100.CG",
             "message": "Колонка CG: карточка-112",
             "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "ODS_PSC",
+        "displayName": "ОДС ПСЦ",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.Q",
+            "message": "Колонка Q: Аварии на электросетях",
+            "matchedInputIds": [
+              "routing.no-access",
+              "routing.threat-to-people",
+              "routing.victims-status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "POLICE",
+        "displayName": "Служба 102 (МВД)",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.V",
+            "message": "Колонка V: Аварии в городском хозяйстве",
+            "matchedInputIds": [
+              "routing.offence",
+              "routing.victims-status"
+            ]
           }
         ]
       },
@@ -148,7 +122,7 @@
         "displayName": "Территориальные ОИВ",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.BX",
+            "ruleId": "classifier.14010100.BX",
             "message": "Колонка BX: карточка-112",
             "matchedInputIds": []
           }
@@ -159,19 +133,8 @@
         "displayName": "Территориальные ОИВ ТиНАО",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.BY",
+            "ruleId": "classifier.14010100.BY",
             "message": "Колонка BY: карточка-112",
-            "matchedInputIds": []
-          }
-        ]
-      },
-      {
-        "id": "ZODD",
-        "displayName": "ЦОДД",
-        "reasons": [
-          {
-            "ruleId": "classifier.1050602.BD",
-            "message": "Колонка BD: пожар: мусоропровод",
             "matchedInputIds": []
           }
         ]
@@ -180,11 +143,16 @@
     "expectedInput": {
       "incident": {
         "selectedSignIds": [
-          "sign.68eaae1dc9472ce9",
-          "sign.8795ab4a7bb0d66a",
-          "sign.8b0cf230ebb8ba99"
+          "sign.78f918d73b3b76a9",
+          "sign.395952e4ece614ef"
         ],
         "answers": [
+          {
+            "questionId": "routing.construction",
+            "optionIds": [
+              "NO"
+            ]
+          },
           {
             "questionId": "routing.culture-listed-facility",
             "optionIds": [
@@ -222,12 +190,6 @@
             ]
           },
           {
-            "questionId": "routing.traffic-blocked",
-            "optionIds": [
-              "NO"
-            ]
-          },
-          {
             "questionId": "routing.victims-status",
             "optionIds": [
               "NONE"
@@ -238,7 +200,7 @@
       "address": {
         "displayAddress": "Учебный адрес, дом 1"
       },
-      "description": "Учебный пример: задымление: мусоропровод",
+      "description": "Учебный пример: Массовое отключение стационарной телефонной связи",
       "victims": {
         "present": false
       }
