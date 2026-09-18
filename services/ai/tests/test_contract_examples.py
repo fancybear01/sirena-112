@@ -29,8 +29,8 @@ def test_scenario_1050602_preserves_classifier_semantics() -> None:
     assert truth["incidentType"] == "задымление: мусоропровод"
     assert truth["ekp35IncidentType"] == "пожар: мусоропровод"
     assert truth["responseScenarioCode"] == "1_9"
-    assert truth["mainService"]["id"] == "MCHS"
-    assert truth["requiredServices"][0]["reasons"][0]["ruleId"].startswith("classifier.")
+    assert truth["mainServices"][0]["id"] == "MCHS"
+    assert all(service["reasons"][0]["ruleId"].startswith("classifier.") for service in truth["requiredServices"])
 
 
 def test_operator_input_rejects_client_supplied_routing_result() -> None:

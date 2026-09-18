@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sirena-112 Core API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Контракт учебной карточки Системы-112. Клиент передаёт только исходные
     сведения оператора; классификацию и маршрутизацию вычисляет Kotlin Core.
@@ -342,7 +342,11 @@ components:
         incidentType: { type: [string, "null"] }
         ekp35IncidentType: { type: [string, "null"] }
         responseScenarioCode: { type: [string, "null"] }
-        mainService: { type: [object, "null"], allOf: [{ $ref: "#/components/schemas/ServiceRef" }] }
+        responseScenarioStatus: { type: string, enum: [CODE, MISSING, EXPLICIT_NONE, SOURCE_LABEL] }
+        mainServices:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ServiceRef" }
         services:
           type: array
           uniqueItems: true
@@ -362,16 +366,16 @@ components:
         id: { type: string, minLength: 1 }
         displayName: { type: string, minLength: 1 }
     RoutedService:
-      allOf:
-        - $ref: "#/components/schemas/ServiceRef"
-        - type: object
-          additionalProperties: false
-          required: [reasons]
-          properties:
-            reasons:
-              type: array
-              minItems: 1
-              items: { $ref: "#/components/schemas/RoutingReason" }
+      type: object
+      additionalProperties: false
+      required: [id, displayName, reasons]
+      properties:
+        id: { type: string, minLength: 1 }
+        displayName: { type: string, minLength: 1 }
+        reasons:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/RoutingReason" }
     RoutingReason:
       type: object
       additionalProperties: false
@@ -450,17 +454,20 @@ components:
     GroundTruthV2:
       type: object
       additionalProperties: false
-      required: [classifierVersion, classifierCode, incidentType, ekp35IncidentType, responseScenarioCode, mainService, requiredServices, expectedInput]
+      required: [classifierVersion, classifierCode, incidentType, ekp35IncidentType, responseScenarioCode, responseScenarioStatus, mainServices, requiredServices, expectedInput]
       properties:
         classifierVersion: { type: string, minLength: 1 }
         classifierCode: { type: string, pattern: "^[0-9]{6,9}$" }
         incidentType: { type: string, minLength: 1 }
-        ekp35IncidentType: { type: string, minLength: 1 }
-        responseScenarioCode: { type: string, minLength: 1 }
-        mainService: { $ref: "#/components/schemas/ServiceRef" }
+        ekp35IncidentType: { type: [string, "null"], minLength: 1 }
+        responseScenarioCode: { type: [string, "null"], minLength: 1 }
+        responseScenarioStatus: { type: string, enum: [CODE, MISSING, EXPLICIT_NONE, SOURCE_LABEL] }
+        mainServices:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ServiceRef" }
         requiredServices:
           type: array
-          minItems: 1
           uniqueItems: true
           items: { $ref: "#/components/schemas/RoutedService" }
         expectedInput: { $ref: "#/components/schemas/OperatorCardInput" }
@@ -469,6 +476,8 @@ components:
       description: Deprecated temporary compatibility shape for 0.1 scenario fixtures.
       additionalProperties: true
       required: [incidentType, requiredServices]
+      not:
+        required: [classifierVersion]
       properties:
         incidentType: { type: string, minLength: 1 }
         ekpCode: { type: string, pattern: "^[0-9]{6,9}$" }
