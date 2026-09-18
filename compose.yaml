@@ -30,7 +30,6 @@ services:
     ports:
       - "${ASTERISK_SIP_PORT:-5060}:5060/udp"
       - "${ASTERISK_SIP_PORT:-5060}:5060/tcp"
-      # ARI/HTTP: loopback only — default credentials are for local dev.
       - "127.0.0.1:${ASTERISK_HTTP_PORT:-8088}:8088/tcp"
       - "${ASTERISK_RTP_PORT_START:-10000}-${ASTERISK_RTP_PORT_END:-10100}:10000-10100/udp"
     healthcheck:
@@ -60,7 +59,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORE_BASE_URL: ${CORE_MEDIA_EVENTS_URL:-}
     ports:
-      # Media HTTP: loopback only for local smoke/curl.
       - "127.0.0.1:${MEDIA_PORT:-8091}:8091"
     depends_on:
       asterisk:

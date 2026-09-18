@@ -1,7 +1,11 @@
 openapi: 3.1.0
 info:
   title: Sirena-112 Core API
-  version: 0.1.0
+  version: 0.2.0
+  description: |
+    Контракт учебной карточки Системы-112. Клиент передаёт только исходные
+    сведения оператора; классификацию и маршрутизацию вычисляет Kotlin Core.
+    Правила совместимости описаны в contracts/README.md.
 servers:
   - url: http://localhost:8080
 paths:
@@ -9,8 +13,7 @@ paths:
     post:
       summary: Вход пользователя
       responses:
-        "200":
-          description: Пользователь аутентифицирован
+        "200": { description: Пользователь аутентифицирован }
   /api/teacher/scenarios:
     get:
       summary: Список сценариев преподавателя
@@ -21,127 +24,181 @@ paths:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: "#/components/schemas/Scenario"
+                items: { $ref: "#/components/schemas/Scenario" }
     post:
       summary: Создать черновик сценария
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Scenario" }
       responses:
         "201":
           description: Сценарий создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scenario" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/teacher/sessions:
     post:
       summary: Создать учебную сессию
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/CreateSessionRequest"
+            schema: { $ref: "#/components/schemas/CreateSessionRequest" }
       responses:
         "201":
           description: Сессия создана
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/teacher/sessions/{sessionId}/start:
     post:
       summary: Запустить учебную сессию
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
       responses:
         "200":
           description: Сессия запущена
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
+              schema: { $ref: "#/components/schemas/Session" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/teacher/sessions/{sessionId}/stop:
     post:
       summary: Завершить учебную сессию
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
       responses:
         "200":
           description: Сессия завершена
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
+              schema: { $ref: "#/components/schemas/Session" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/teacher/sessions/{sessionId}/report:
     get:
       summary: Получить отчёт по сессии
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
       responses:
         "200":
           description: Отчёт сформирован
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SessionReport"
+              schema: { $ref: "#/components/schemas/SessionReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/student/assignments:
     get:
       summary: Назначенные задания обучающегося
       responses:
         "200":
-          description: Список заданий
+          description: Список назначений
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StudentAssignment" }
   /api/student/sessions/{sessionId}:
     get:
       summary: Получить состояние сессии
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
       responses:
         "200":
           description: Состояние сессии
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
-  /api/student/sessions/{sessionId}/card:
-    patch:
-      summary: Сохранить промежуточное состояние карточки
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/student/sessions/{sessionId}/card-form:
+    get:
+      summary: Получить доступные признаки и вопросы карточки
+      description: |
+        Core возвращает форму для текущего черновика. Клиент не строит правила
+        зависимостей и не вычисляет службы самостоятельно.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
       responses:
         "200":
-          description: Карточка сохранена
+          description: Доступная форма карточки
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
+              schema: { $ref: "#/components/schemas/CardFormDefinition" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/student/sessions/{sessionId}/card:
+    patch:
+      summary: Сохранить исходные данные карточки и получить пересчитанный результат
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveCardRequest" }
+      responses:
+        "200":
+          description: Карточка сохранена и классификация пересчитана
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/student/sessions/{sessionId}/submit:
     post:
-      summary: Отправить ответ на оценивание
-      parameters:
-        - $ref: "#/components/parameters/SessionId"
+      summary: Отправить карточку на оценивание
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitCardRequest" }
       responses:
         "202":
-          description: Оценивание запущено
+          description: Оценивание завершено или поставлено в очередь
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SessionReport"
+              schema: { $ref: "#/components/schemas/SessionReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
 components:
   parameters:
     SessionId:
       name: sessionId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Некорректные или неполные данные
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Conflict:
+      description: Недопустимое состояние или устаревшая ревизия карточки
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
   schemas:
     CreateSessionRequest:
       type: object
       additionalProperties: false
+      required: [scenarioId]
       properties:
-        scenarioId:
-          type: string
-          format: uuid
+        scenarioId: { type: string, format: uuid }
+    StudentAssignment:
+      type: object
+      additionalProperties: false
+      required: [scenario, session]
+      properties:
+        scenario: { $ref: "#/components/schemas/Scenario" }
+        session: { $ref: "#/components/schemas/Session" }
     Session:
       type: object
-      required: [id, scenarioId, mode, state, card]
+      additionalProperties: false
+      required: [id, scenarioId, mode, state, card, cardRevision, startedAt, timeLimitSeconds]
       properties:
         id: { type: string, format: uuid }
         scenarioId: { type: string, format: uuid }
@@ -149,55 +206,314 @@ components:
         state:
           type: string
           enum: [CREATED, READY, RINGING, ACTIVE, COMPLETED, SCORING, SCORED, FAILED]
-        card:
-          $ref: "#/components/schemas/OperatorCard"
+        card: { $ref: "#/components/schemas/OperatorCard" }
+        cardRevision: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: [string, "null"], format: date-time }
+        timeLimitSeconds: { type: integer, minimum: 1 }
+        timeLimitExceeded: { type: boolean }
         report:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/SessionReport"
+          type: [object, "null"]
+          allOf: [{ $ref: "#/components/schemas/SessionReport" }]
+    SaveCardRequest:
+      type: object
+      additionalProperties: false
+      required: [input]
+      properties:
+        input: { $ref: "#/components/schemas/OperatorCardInput" }
+        expectedRevision:
+          type: [integer, "null"]
+          minimum: 0
+          description: Опциональная защита от перезаписи более нового черновика.
+    SubmitCardRequest:
+      type: object
+      additionalProperties: false
+      required: [input]
+      properties:
+        input: { $ref: "#/components/schemas/OperatorCardInput" }
+        expectedRevision: { type: [integer, "null"], minimum: 0 }
     OperatorCard:
       type: object
+      additionalProperties: false
+      required: [input, calculation]
       properties:
-        incidentType: { type: string, nullable: true }
-        signs:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/IncidentSigns"
-        address: { type: string, nullable: true }
-        requiredServices:
+        input: { $ref: "#/components/schemas/OperatorCardInput" }
+        calculation:
+          type: [object, "null"]
+          allOf: [{ $ref: "#/components/schemas/CardCalculation" }]
+    OperatorCardInput:
+      type: object
+      additionalProperties: false
+      description: Поля, которые вводит оператор. Производные поля здесь запрещены.
+      properties:
+        caller: { $ref: "#/components/schemas/CallerInput" }
+        incident: { $ref: "#/components/schemas/IncidentInput" }
+        address: { $ref: "#/components/schemas/AddressInput" }
+        description:
+          type: [string, "null"]
+          maxLength: 1999
+          description: Описание со слов заявителя.
+        victims: { $ref: "#/components/schemas/VictimsInput" }
+        facts:
+          type: object
+          additionalProperties: true
+          description: Сценарные дополнительные факты, разрешённые конкретной формой.
+    CallerInput:
+      type: [object, "null"]
+      additionalProperties: false
+      properties:
+        phoneNumbers:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/PhoneNumber" }
+        fullName: { type: [string, "null"], maxLength: 255 }
+        status:
+          type: [string, "null"]
+          enum: [EYEWITNESS, VICTIM, RELATIVE, ACQUAINTANCE, CHILD, PARTICIPANT, OTHER, null]
+        communicationChannel:
+          type: [string, "null"]
+          enum: [VOICE, SMS, OTHER, null]
+        language: { type: [string, "null"], maxLength: 64 }
+    PhoneNumber:
+      type: object
+      additionalProperties: false
+      required: [value, kind]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 64 }
+        kind: { type: string, enum: [AON, PROVIDED, ON_SCENE] }
+        foreign: { type: boolean, default: false }
+    IncidentInput:
+      type: [object, "null"]
+      additionalProperties: false
+      properties:
+        selectedSignIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+          description: Стабильные идентификаторы выбранных признаков из CardFormDefinition.
+        answers:
+          type: array
+          items: { $ref: "#/components/schemas/QuestionAnswer" }
+    QuestionAnswer:
+      type: object
+      additionalProperties: false
+      required: [questionId]
+      properties:
+        questionId: { type: string, minLength: 1 }
+        optionIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        freeText: { type: [string, "null"], maxLength: 1000 }
+      anyOf:
+        - required: [optionIds]
+        - required: [freeText]
+    AddressInput:
+      type: [object, "null"]
+      additionalProperties: false
+      required: [displayAddress]
+      properties:
+        displayAddress: { type: string, minLength: 1, maxLength: 500 }
+        region: { type: [string, "null"], maxLength: 128 }
+        locality: { type: [string, "null"], maxLength: 128 }
+        street: { type: [string, "null"], maxLength: 128 }
+        house: { type: [string, "null"], maxLength: 32 }
+        building: { type: [string, "null"], maxLength: 32 }
+        apartment: { type: [string, "null"], maxLength: 32 }
+        description: { type: [string, "null"], maxLength: 500 }
+        latitude: { type: [number, "null"], minimum: -90, maximum: 90 }
+        longitude: { type: [number, "null"], minimum: -180, maximum: 180 }
+    VictimsInput:
+      type: [object, "null"]
+      additionalProperties: false
+      required: [present]
+      properties:
+        present: { type: boolean }
+        count: { type: [integer, "null"], minimum: 0 }
+        threatToPeople: { type: [boolean, "null"] }
+    CardCalculation:
+      type: object
+      additionalProperties: false
+      required: [status, classifierVersion, missingInputIds, services]
+      properties:
+        status: { type: string, enum: [INCOMPLETE, RESOLVED, NO_MATCH] }
+        classifierVersion: { type: string, minLength: 1 }
+        classifierCode: { type: [string, "null"], pattern: "^[0-9]{6,9}$" }
+        incidentType: { type: [string, "null"] }
+        ekp35IncidentType: { type: [string, "null"] }
+        responseScenarioCode: { type: [string, "null"] }
+        mainService: { type: [object, "null"], allOf: [{ $ref: "#/components/schemas/ServiceRef" }] }
+        services:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/RoutedService" }
+        missingInputIds:
           type: array
           uniqueItems: true
           items: { type: string }
-        facts:
-          type: object
-    IncidentSigns:
-      type: object
-      required: [level1]
-      properties:
-        level1: { type: string }
-        level2: { type: string, nullable: true }
-        level3: { type: string, nullable: true }
-        additional:
+        explanations:
           type: array
           items: { type: string }
+    ServiceRef:
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id: { type: string, minLength: 1 }
+        displayName: { type: string, minLength: 1 }
+    RoutedService:
+      allOf:
+        - $ref: "#/components/schemas/ServiceRef"
+        - type: object
+          additionalProperties: false
+          required: [reasons]
+          properties:
+            reasons:
+              type: array
+              minItems: 1
+              items: { $ref: "#/components/schemas/RoutingReason" }
+    RoutingReason:
+      type: object
+      additionalProperties: false
+      required: [ruleId, message]
+      properties:
+        ruleId: { type: string, minLength: 1 }
+        message: { type: string, minLength: 1 }
+        matchedInputIds:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+    CardFormDefinition:
+      type: object
+      additionalProperties: false
+      required: [classifierVersion, signGroups, questions]
+      properties:
+        classifierVersion: { type: string, minLength: 1 }
+        signGroups:
+          type: array
+          items: { $ref: "#/components/schemas/SignGroup" }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/QuestionDefinition" }
+    SignGroup:
+      type: object
+      additionalProperties: false
+      required: [id, label, level, options]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        level: { type: integer, enum: [1, 2, 3] }
+        required: { type: boolean, default: false }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/SelectionOption" }
+    QuestionDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, label, inputType]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        inputType: { type: string, enum: [SINGLE_SELECT, MULTI_SELECT, TEXT] }
+        required: { type: boolean, default: false }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/SelectionOption" }
+    SelectionOption:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
     Scenario:
       type: object
+      additionalProperties: false
       required: [id, version, title, category, difficulty, profile, groundTruth, rubric]
       properties:
         id: { type: string, format: uuid }
         version: { type: integer, minimum: 1 }
-        title: { type: string }
+        title: { type: string, minLength: 1 }
         category: { type: string }
         difficulty: { type: string, enum: [BASIC, INTERMEDIATE, ADVANCED] }
-        profile: { type: string }
-        timeLimitSeconds: { type: integer, minimum: 1 }
-        groundTruth: { type: object }
-        rubric: { type: object }
+        profile: { type: string, minLength: 1 }
+        timeLimitSeconds: { type: integer, minimum: 1, default: 30 }
+        groundTruth: { $ref: "#/components/schemas/GroundTruth" }
+        rubric: { $ref: "#/components/schemas/Rubric" }
+    GroundTruth:
+      description: |
+        Основная форма — GroundTruthV2. LegacyGroundTruth поддерживается только
+        во время миграции Python AI в задаче #35.
+      oneOf:
+        - $ref: "#/components/schemas/GroundTruthV2"
+        - $ref: "#/components/schemas/LegacyGroundTruth"
+    GroundTruthV2:
+      type: object
+      additionalProperties: false
+      required: [classifierVersion, classifierCode, incidentType, ekp35IncidentType, responseScenarioCode, mainService, requiredServices, expectedInput]
+      properties:
+        classifierVersion: { type: string, minLength: 1 }
+        classifierCode: { type: string, pattern: "^[0-9]{6,9}$" }
+        incidentType: { type: string, minLength: 1 }
+        ekp35IncidentType: { type: string, minLength: 1 }
+        responseScenarioCode: { type: string, minLength: 1 }
+        mainService: { $ref: "#/components/schemas/ServiceRef" }
+        requiredServices:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/RoutedService" }
+        expectedInput: { $ref: "#/components/schemas/OperatorCardInput" }
+    LegacyGroundTruth:
+      type: object
+      description: Deprecated temporary compatibility shape for 0.1 scenario fixtures.
+      additionalProperties: true
+      required: [incidentType, requiredServices]
+      properties:
+        incidentType: { type: string, minLength: 1 }
+        ekpCode: { type: string, pattern: "^[0-9]{6,9}$" }
+        signs:
+          type: object
+          required: [level1]
+          properties:
+            level1: { type: string }
+            level2: { type: [string, "null"] }
+            level3: { type: [string, "null"] }
+            additional:
+              type: array
+              uniqueItems: true
+              items: { type: string }
+        address: { type: [string, "null"] }
+        requiredServices:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        facts: { type: object, additionalProperties: true }
+    Rubric:
+      type: object
+      additionalProperties: false
+      required: [criteria]
+      properties:
+        criteria:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, description, weight]
+            properties:
+              code: { type: string }
+              description: { type: string }
+              weight: { type: number, minimum: 0 }
+              critical: { type: boolean, default: false }
     SessionReport:
       type: object
+      additionalProperties: false
       required: [sessionId, score, maxScore, passed, criteria, errors, recommendations]
       properties:
         sessionId: { type: string, format: uuid }
+        classifierVersion: { type: [string, "null"] }
+        classifierCode: { type: [string, "null"], pattern: "^[0-9]{6,9}$" }
         score: { type: number }
         maxScore: { type: number }
         passed: { type: boolean }
@@ -205,6 +521,7 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             required: [code, passed, points, maxPoints, message]
             properties:
               code: { type: string }
@@ -216,11 +533,20 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             required: [code, message]
             properties:
               code: { type: string }
               message: { type: string }
-              field: { type: string, nullable: true }
+              field: { type: [string, "null"] }
         recommendations:
           type: array
           items: { type: string }
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        field: { type: [string, "null"] }
