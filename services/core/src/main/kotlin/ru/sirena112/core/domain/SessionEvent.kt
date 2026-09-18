@@ -18,6 +18,8 @@ enum class SessionEventType(val value: String) {
     OPERATOR_CARD_UPDATED("operator.card_updated"),
     CARD_ANSWERS_UPDATED("card.answers_updated"),
     ROUTING_CALCULATED("routing.calculated"),
+    SERVICE_ASSIGNED("service.assigned"),
+    SERVICE_STATUS_CHANGED("service.status_changed"),
     CARD_TIME_LIMIT_EXCEEDED("card.time_limit_exceeded"),
     OPERATOR_ANSWER_SUBMITTED("operator.answer_submitted"),
     SCORE_STARTED("score.started"),

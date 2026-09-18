@@ -44,6 +44,8 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 | `operator.card_updated` | core | teacher |
 | `card.answers_updated` | core | teacher, student |
 | `routing.calculated` | core | teacher, student |
+| `service.assigned` | core | teacher, student |
+| `service.status_changed` | core | teacher, student |
 | `card.time_limit_exceeded` | core | teacher, student |
 | `operator.answer_submitted` | core | teacher |
 | `score.started` | core | teacher, student |
@@ -54,6 +56,49 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 Media, поэтому в конверте используется `source: "media"`. `eventId` создаёт
 Media; в `payload` передаются `aiSessionId`, текст, признак финальности и
 временные границы фразы. Python не отправляет эти события в Core напрямую.
+
+## Назначения и статусы ДДС (#37)
+
+После проверки и отправки карточки Core фиксирует адресатов последней вычисленной
+маршрутизации: по одному `service.assigned` на уникальный serviceId. Пересчёт
+черновика не оповещает службы. Назначение сохраняет cardRevision отправленной карточки.
+Пустой набор служб допустим и не создаёт фиктивных назначений.
+
+Оба события используют общий конверт, `source: core`; источник учебного изменения
+находится в `payload.changeSource` (SYSTEM при создании, MOCK через mock API;
+TEACHER и SERVICE зарезервированы). `eventId` совпадает с ID записи истории.
+
+```json
+{
+  "eventId": "eaa138be-2d41-42d3-80d0-f7c4df6a0ba2",
+  "sessionId": "0199d7b6-0000-7000-8000-000000000002",
+  "type": "service.status_changed",
+  "timestamp": "2026-09-19T00:00:05Z",
+  "source": "core",
+  "payload": {
+    "assignmentId": "ad6138be-2d41-42d3-80d0-f7c4df6a0ba2",
+    "serviceId": "MCHS",
+    "cardRevision": 1,
+    "deadlineAt": "2026-09-19T01:00:00Z",
+    "sequence": 2,
+    "fromStatus": "ADDED",
+    "status": "RECEIVED",
+    "changeSource": "MOCK",
+    "comment": "Получено диспетчером",
+    "refusalReason": null
+  }
+}
+```
+
+У `service.assigned`: sequence=1, fromStatus=null, status=ADDED, changeSource=SYSTEM.
+Последовательность определяется sequence внутри назначения; timestamp может совпадать.
+Повтор eventId явно отклоняется с 409, без повторной публикации и изменения истории.
+Существующий `/ws/sessions/{sessionId}/events` доставляет новые события и replay.
+Клиенту нужно дедуплицировать replay по eventId.
+
+`overdue` вычисляется при чтении, не вызывает смену статуса и не создаёт событие:
+UI может отсчитывать время до deadlineAt локально. Закрытые назначения сохраняют
+всю историю; позднее завершение видно по времени перехода относительно deadlineAt.
 
 ## События карточки и маршрутизации
 
