@@ -1,0 +1,122 @@
+{
+  "id": "0c44dd40-9423-4e58-8905-fc7b45c26dd4",
+  "version": 2,
+  "title": "Задымление в мусоропроводе жилого дома",
+  "category": "FIRE",
+  "difficulty": "BASIC",
+  "profile": "Заявитель сообщает о дыме из мусоропровода жилого дома. На верхних этажах могут находиться люди.",
+  "timeLimitSeconds": 600,
+  "groundTruth": {
+    "classifierVersion": "046-2024-11-15",
+    "classifierCode": "1050602",
+    "incidentType": "задымление: мусоропровод",
+    "ekp35IncidentType": "пожар: мусоропровод",
+    "responseScenarioCode": "1_9",
+    "mainService": {
+      "id": "MCHS",
+      "displayName": "Служба 101 (МЧС)"
+    },
+    "requiredServices": [
+      {
+        "id": "MCHS",
+        "displayName": "Служба 101 (МЧС)",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.main-service",
+            "message": "Основная служба для комбинации «жилой дом → мусоропровод → дым».",
+            "matchedInputIds": [
+              "sign.object.residential-building",
+              "sign.location.garbage-chute",
+              "sign.fire.smoke"
+            ]
+          }
+        ]
+      }
+    ],
+    "expectedInput": {
+      "caller": {
+        "phoneNumbers": [
+          {
+            "value": "+74951234567",
+            "kind": "AON",
+            "foreign": false
+          }
+        ],
+        "fullName": null,
+        "status": "EYEWITNESS",
+        "communicationChannel": "VOICE",
+        "language": "ru"
+      },
+      "incident": {
+        "selectedSignIds": [
+          "sign.object.residential-building",
+          "sign.location.garbage-chute",
+          "sign.fire.smoke"
+        ],
+        "answers": [
+          {
+            "questionId": "victims.present",
+            "optionIds": ["option.no"]
+          }
+        ]
+      },
+      "address": {
+        "displayAddress": "Москва, ул. Берзарина, д. 12",
+        "region": "Москва",
+        "locality": "Москва",
+        "street": "Берзарина",
+        "house": "12",
+        "building": null,
+        "apartment": null,
+        "description": "Дым выходит из мусоропровода в подъезде.",
+        "latitude": null,
+        "longitude": null
+      },
+      "description": "Из мусоропровода в подъезде идёт густой дым, на верхних этажах могут быть люди.",
+      "victims": {
+        "present": false,
+        "count": 0,
+        "threatToPeople": true
+      },
+      "facts": {
+        "callerSafe": true
+      }
+    }
+  },
+  "caller": {
+    "persona": "взволнованный очевидец",
+    "panic": 0.6,
+    "trust": 0.7,
+    "patience": 0.6,
+    "voice": "обычный",
+    "background": "подъезд"
+  },
+  "rubric": {
+    "criteria": [
+      {
+        "code": "SIGNS",
+        "description": "Выбран полный путь признаков происшествия",
+        "weight": 0.35,
+        "critical": true
+      },
+      {
+        "code": "ADDRESS",
+        "description": "Указан адрес происшествия",
+        "weight": 0.2,
+        "critical": true
+      },
+      {
+        "code": "VICTIMS",
+        "description": "Уточнена угроза людям и наличие пострадавших",
+        "weight": 0.2,
+        "critical": false
+      },
+      {
+        "code": "DESCRIPTION",
+        "description": "Зафиксированы существенные обстоятельства",
+        "weight": 0.25,
+        "critical": false
+      }
+    ]
+  }
+}
