@@ -2,75 +2,210 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sirena112.local/schemas/scenario.schema.json",
   "title": "Sirena-112 training scenario",
+  "description": "Версия 0.2: исходные данные оператора отделены от результата классификации Core.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "id",
-    "version",
-    "title",
-    "category",
-    "difficulty",
-    "profile",
-    "groundTruth",
-    "rubric"
-  ],
+  "required": ["id", "version", "title", "category", "difficulty", "profile", "groundTruth", "rubric"],
   "properties": {
     "id": { "type": "string", "format": "uuid" },
     "version": { "type": "integer", "minimum": 1 },
     "title": { "type": "string", "minLength": 1 },
     "category": {
       "type": "string",
-      "description": "Группа происшествий по классификатору ГБУ «Система 112». Значения соответствуют 23 группам классификатора один к одному; преподаватель выбирает по ним тему занятия.",
+      "description": "Высокоуровневая учебная группа. Она не заменяет classifierCode.",
       "enum": [
-        "FIRE",
-        "ACCIDENT",
-        "EXPLOSION",
-        "EXPLOSION_THREAT",
-        "COLLAPSE",
-        "COLLAPSE_THREAT",
-        "NATURAL_HAZARD",
-        "ENVIRONMENT",
-        "HYDRAULIC_FACILITY",
-        "INDUSTRIAL_ACCIDENT",
-        "HAZMAT_THREAT",
-        "TRANSPORT_FACILITY",
-        "GAS",
-        "UTILITY",
-        "PUBLIC_ORDER",
-        "ROAD_CONDITION",
-        "PERSON_AT_RISK",
-        "CHILD_AT_RISK",
-        "DEATH",
-        "SOCIAL_AID",
-        "ANIMAL",
-        "MEDICAL",
-        "OTHER"
+        "FIRE", "ACCIDENT", "EXPLOSION", "EXPLOSION_THREAT", "COLLAPSE",
+        "COLLAPSE_THREAT", "NATURAL_HAZARD", "ENVIRONMENT", "HYDRAULIC_FACILITY",
+        "INDUSTRIAL_ACCIDENT", "HAZMAT_THREAT", "TRANSPORT_FACILITY", "GAS",
+        "UTILITY", "PUBLIC_ORDER", "ROAD_CONDITION", "PERSON_AT_RISK",
+        "CHILD_AT_RISK", "DEATH", "SOCIAL_AID", "ANIMAL", "MEDICAL", "OTHER"
       ]
     },
-    "difficulty": {
-      "type": "string",
-      "enum": ["BASIC", "INTERMEDIATE", "ADVANCED"]
-    },
+    "difficulty": { "type": "string", "enum": ["BASIC", "INTERMEDIATE", "ADVANCED"] },
     "profile": { "type": "string", "minLength": 1 },
     "timeLimitSeconds": { "type": "integer", "minimum": 1, "default": 30 },
     "groundTruth": {
+      "oneOf": [
+        { "$ref": "#/$defs/groundTruthV2" },
+        { "$ref": "#/$defs/legacyGroundTruth" }
+      ]
+    },
+    "caller": { "$ref": "#/$defs/callerProfile" },
+    "rubric": { "$ref": "#/$defs/rubric" }
+  },
+  "$defs": {
+    "serviceRef": {
       "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "routingReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "message"],
+      "properties": {
+        "ruleId": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "matchedInputIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "routedService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "reasons"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/routingReason" }
+        }
+      }
+    },
+    "phoneNumber": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "kind"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "kind": { "type": "string", "enum": ["AON", "PROVIDED", "ON_SCENE"] },
+        "foreign": { "type": "boolean", "default": false }
+      }
+    },
+    "callerInput": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "phoneNumbers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/phoneNumber" }
+        },
+        "fullName": { "type": ["string", "null"], "maxLength": 255 },
+        "status": {
+          "type": ["string", "null"],
+          "enum": ["EYEWITNESS", "VICTIM", "RELATIVE", "ACQUAINTANCE", "CHILD", "PARTICIPANT", "OTHER", null]
+        },
+        "communicationChannel": { "type": ["string", "null"], "enum": ["VOICE", "SMS", "OTHER", null] },
+        "language": { "type": ["string", "null"], "maxLength": 64 }
+      }
+    },
+    "questionAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["questionId"],
+      "properties": {
+        "questionId": { "type": "string", "minLength": 1 },
+        "optionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "freeText": { "type": ["string", "null"], "maxLength": 1000 }
+      },
+      "anyOf": [{ "required": ["optionIds"] }, { "required": ["freeText"] }]
+    },
+    "incidentInput": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "selectedSignIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "answers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/questionAnswer" }
+        }
+      }
+    },
+    "addressInput": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["displayAddress"],
+      "properties": {
+        "displayAddress": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "region": { "type": ["string", "null"], "maxLength": 128 },
+        "locality": { "type": ["string", "null"], "maxLength": 128 },
+        "street": { "type": ["string", "null"], "maxLength": 128 },
+        "house": { "type": ["string", "null"], "maxLength": 32 },
+        "building": { "type": ["string", "null"], "maxLength": 32 },
+        "apartment": { "type": ["string", "null"], "maxLength": 32 },
+        "description": { "type": ["string", "null"], "maxLength": 500 },
+        "latitude": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+        "longitude": { "type": ["number", "null"], "minimum": -180, "maximum": 180 }
+      }
+    },
+    "victimsInput": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["present"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "count": { "type": ["integer", "null"], "minimum": 0 },
+        "threatToPeople": { "type": ["boolean", "null"] }
+      }
+    },
+    "operatorCardInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Исключительно исходные сведения оператора; classifierCode, incidentType и службы здесь недопустимы.",
+      "properties": {
+        "caller": { "$ref": "#/$defs/callerInput" },
+        "incident": { "$ref": "#/$defs/incidentInput" },
+        "address": { "$ref": "#/$defs/addressInput" },
+        "description": { "type": ["string", "null"], "maxLength": 1999 },
+        "victims": { "$ref": "#/$defs/victimsInput" },
+        "facts": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "groundTruthV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classifierVersion", "classifierCode", "incidentType", "ekp35IncidentType",
+        "responseScenarioCode", "mainService", "requiredServices", "expectedInput"
+      ],
+      "properties": {
+        "classifierVersion": { "type": "string", "minLength": 1 },
+        "classifierCode": {
+          "type": "string",
+          "pattern": "^[0-9]{6,9}$",
+          "description": "Код комбинации признаков, а не текстовый ЕКП-35."
+        },
+        "incidentType": { "type": "string", "minLength": 1 },
+        "ekp35IncidentType": { "type": "string", "minLength": 1 },
+        "responseScenarioCode": { "type": "string", "minLength": 1 },
+        "mainService": { "$ref": "#/$defs/serviceRef" },
+        "requiredServices": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/routedService" }
+        },
+        "expectedInput": { "$ref": "#/$defs/operatorCardInput" }
+      }
+    },
+    "legacyGroundTruth": {
+      "type": "object",
+      "description": "Переходная форма ground truth версии 0.1. Допустима только до завершения задачи #35; новые сценарии должны использовать groundTruthV2.",
       "additionalProperties": true,
       "required": ["incidentType", "requiredServices"],
       "properties": {
-        "incidentType": {
-          "type": "string",
-          "description": "Итоговый тип происшествия. Вычисляется из комбинации признаков по классификатору, а не задаётся произвольно."
-        },
-        "ekpCode": {
-          "type": "string",
-          "pattern": "^[0-9]{6,9}$",
-          "description": "Код комбинации признаков в классификаторе происшествий."
-        },
+        "incidentType": { "type": "string", "minLength": 1 },
+        "ekpCode": { "type": "string", "pattern": "^[0-9]{6,9}$" },
         "signs": {
           "type": "object",
-          "description": "Формализованные признаки происшествия, которые оператор выбирает в опросной карте АРМ-112. Именно их выбор и оценивается, тип происшествия из них следует.",
-          "additionalProperties": false,
           "required": ["level1"],
           "properties": {
             "level1": { "type": "string" },
@@ -79,8 +214,7 @@
             "additional": {
               "type": "array",
               "items": { "type": "string" },
-              "uniqueItems": true,
-              "description": "Дополнительные признаки, не влияющие на итоговый тип."
+              "uniqueItems": true
             }
           }
         },
@@ -88,16 +222,12 @@
         "requiredServices": {
           "type": "array",
           "items": { "type": "string" },
-          "uniqueItems": true,
-          "description": "Список оповещения. Вычисляется из итогового типа происшествия по классификатору."
+          "uniqueItems": true
         },
-        "facts": {
-          "type": "object",
-          "additionalProperties": true
-        }
+        "facts": { "type": "object", "additionalProperties": true }
       }
     },
-    "caller": {
+    "callerProfile": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -122,8 +252,8 @@
             "additionalProperties": false,
             "required": ["code", "description", "weight"],
             "properties": {
-              "code": { "type": "string" },
-              "description": { "type": "string" },
+              "code": { "type": "string", "minLength": 1 },
+              "description": { "type": "string", "minLength": 1 },
               "weight": { "type": "number", "minimum": 0 },
               "critical": { "type": "boolean", "default": false }
             }

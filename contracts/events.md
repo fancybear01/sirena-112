@@ -42,6 +42,9 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 | `operator.speech_ended` | media | core |
 | `caller.interrupted` | media | core |
 | `operator.card_updated` | core | teacher |
+| `card.answers_updated` | core | teacher, student |
+| `routing.calculated` | core | teacher, student |
+| `card.time_limit_exceeded` | core | teacher, student |
 | `operator.answer_submitted` | core | teacher |
 | `score.started` | core | teacher, student |
 | `score.completed` | core | teacher, student |
@@ -51,6 +54,67 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 Media, поэтому в конверте используется `source: "media"`. `eventId` создаёт
 Media; в `payload` передаются `aiSessionId`, текст, признак финальности и
 временные границы фразы. Python не отправляет эти события в Core напрямую.
+
+## События карточки и маршрутизации
+
+Core публикует эти события после успешного сохранения карточки. Они не дают
+клиенту права подменить вычисленные поля: payload отражает решение Core для
+конкретной ревизии карточки.
+
+### card.answers_updated
+
+    {
+      "sessionId": "0199d7b6-0000-7000-8000-000000000002",
+      "type": "card.answers_updated",
+      "source": "core",
+      "payload": {
+        "cardRevision": 3,
+        "selectedSignIds": [
+          "sign.object.residential-building",
+          "sign.location.garbage-chute",
+          "sign.fire.smoke"
+        ],
+        "answeredQuestionIds": ["victims.present"]
+      }
+    }
+
+### routing.calculated
+
+    {
+      "sessionId": "0199d7b6-0000-7000-8000-000000000002",
+      "type": "routing.calculated",
+      "source": "core",
+      "payload": {
+        "cardRevision": 3,
+        "status": "RESOLVED",
+        "classifierVersion": "046-2024-11-15",
+        "classifierCode": "1050602",
+        "incidentType": "задымление: мусоропровод",
+        "ekp35IncidentType": "пожар: мусоропровод",
+        "responseScenarioCode": "1_9",
+        "serviceIds": ["MCHS"],
+        "missingInputIds": []
+      }
+    }
+
+При INCOMPLETE код и службы могут быть null/пустыми, а missingInputIds
+содержит идентификаторы признаков или вопросов, которые нужно заполнить.
+
+### card.time_limit_exceeded
+
+    {
+      "sessionId": "0199d7b6-0000-7000-8000-000000000002",
+      "type": "card.time_limit_exceeded",
+      "source": "core",
+      "payload": {
+        "timeLimitSeconds": 600,
+        "elapsedSeconds": 601,
+        "cardRevision": 3
+      }
+    }
+
+Core отправляет событие не более одного раза для одной сессии. Факт превышения
+также возвращается в Session.timeLimitExceeded и доступен AI в отчёте.
 
 ## Команды Core -> Media
 
