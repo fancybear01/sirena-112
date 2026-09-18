@@ -2,6 +2,7 @@ package ru.sirena112.core.web
 
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.ServletWebRequest
@@ -12,6 +13,17 @@ import java.util.NoSuchElementException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
+
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleUnreadable(
+        exception: HttpMessageNotReadableException,
+        request: ServletWebRequest
+    ): ResponseEntity<ApiError> = response(
+        status = HttpStatus.BAD_REQUEST,
+        code = "BAD_REQUEST",
+        message = "Некорректное тело запроса: ${exception.mostSpecificCause.message ?: "не удалось разобрать JSON"}",
+        request = request
+    )
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleBadRequest(
