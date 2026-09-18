@@ -30,7 +30,7 @@ services:
     ports:
       - "${ASTERISK_SIP_PORT:-5060}:5060/udp"
       - "${ASTERISK_SIP_PORT:-5060}:5060/tcp"
-      - "${ASTERISK_HTTP_PORT:-8088}:8088/tcp"
+      - "127.0.0.1:${ASTERISK_HTTP_PORT:-8088}:8088/tcp"
       - "${ASTERISK_RTP_PORT_START:-10000}-${ASTERISK_RTP_PORT_END:-10100}:10000-10100/udp"
     healthcheck:
       test:
@@ -42,6 +42,27 @@ services:
       timeout: 5s
       retries: 12
       start_period: 45s
+    restart: unless-stopped
+
+  media:
+    build:
+      context: ./services/media
+    environment:
+      MEDIA_HTTP_ADDR: ":8091"
+      ARI_BASE_URL: http://asterisk:8088/ari
+      ARI_USERNAME: ${ASTERISK_ARI_USER:-media}
+      ARI_PASSWORD: ${ASTERISK_ARI_PASSWORD:-change-me-ari}
+      ARI_APP: sirena-media
+      RTP_LISTEN_ADDR: "0.0.0.0"
+      RTP_PORT: "18000"
+      RTP_PUBLIC_HOST: media
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORE_BASE_URL: ${CORE_MEDIA_EVENTS_URL:-}
+    ports:
+      - "127.0.0.1:${MEDIA_PORT:-8091}:8091"
+    depends_on:
+      asterisk:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

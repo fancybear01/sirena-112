@@ -3,7 +3,8 @@
 Минимальный Asterisk для задачи [#9](https://github.com/fancybear01/sirena-112/issues/9):
 
 - два внутренних SIP-номера: **1001** и **1002**;
-- **ARI** на HTTP `:8088` и отдельный пользователь (по умолчанию `media`);
+
+- **ARI** на HTTP `127.0.0.1:8088` (только loopback) и отдельный пользователь (по умолчанию `media`);
 - кодеки **μ-law / A-law** (RTP), совместимые с последующим Media Gateway;
 - внутренний dialplan `from-internal` для звонков `_10XX`.
 
@@ -76,7 +77,7 @@ Dialplan: контекст `from-internal`, шаблон `_10XX` → `Dial(PJSIP
 | Переменная | Назначение |
 |------------|------------|
 | `ASTERISK_SIP_PORT` | SIP signaling (UDP/TCP) на хосте |
-| `ASTERISK_HTTP_PORT` | HTTP + ARI |
+| `ASTERISK_HTTP_PORT` | HTTP + ARI (публикуется только на `127.0.0.1`) |
 | `ASTERISK_RTP_PORT_START` / `END` | диапазон RTP на хосте |
 | `ASTERISK_EXTERNAL_ADDRESS` | IP, который softphone использует для RTP (часто `127.0.0.1`) |
 | `ASTERISK_SIP_1001_PASSWORD` / `1002` | пароли SIP |

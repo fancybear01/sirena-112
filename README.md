@@ -42,10 +42,11 @@
 
 ```bash
 docker compose up -d postgres
-docker compose up -d --build asterisk
+docker compose up -d --build asterisk media
 ```
 
-Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).
+Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).  
+Media Gateway: [`services/media/README.md`](services/media/README.md), контракт [`contracts/media-core.md`](contracts/media-core.md).
 
 Приложения будут добавляться в Compose по мере появления рабочих Dockerfile.
 

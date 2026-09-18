@@ -1,23 +1,17 @@
-# Use the official Golang image as a base
-FROM golang:1.20-alpine
+# syntax=docker/dockerfile:1
 
-# Set the working directory
-WORKDIR /app
-
-# Copy go.mod and go.sum files
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
-
-# Copy the source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/media ./cmd/media
 
-# Build the application
-RUN go build -o media-gateway ./cmd/media
-
-# Expose the port the app runs on
-EXPOSE 8080
-
-# Command to run the executable
-CMD ["./media-gateway"]
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=build /out/media /app/media
+EXPOSE 8091 18000/udp
+USER nobody
+ENTRYPOINT ["/app/media"]
