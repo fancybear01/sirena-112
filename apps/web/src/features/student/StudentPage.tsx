@@ -6,8 +6,10 @@ import {
   Checkbox,
   Divider,
   Group,
+  NumberInput,
   Paper,
   Progress,
+  Radio,
   Select,
   Stack,
   Text,
@@ -22,63 +24,121 @@ import {
   IconCheck,
   IconClock,
   IconDeviceFloppy,
+  IconRoute,
   IconSend,
   IconShieldCheck,
   IconX,
 } from '@tabler/icons-react';
+import type { CardCalculation, CallerInput, QuestionAnswer } from '../../api/types';
 import { getApiErrorMessage } from '../../api/errors';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
-import { incidentTypeOptions, serviceOptions } from './api/student.fixture';
 import { studentApi } from './api/studentApi';
 import type {
   StudentApi,
   StudentAssignment,
-  StudentOperatorCard,
+  StudentCardForm,
+  StudentCardInput,
+  StudentSession,
   StudentSessionReport,
 } from './api/types';
 
-type CardField = 'incidentType' | 'address' | 'description' | 'requiredServices';
-type CardErrors = Partial<Record<CardField, string>>;
+type CardErrors = Record<string, string | undefined>;
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+const emptyCaller: CallerInput = {
+  phoneNumbers: [],
+  fullName: null,
+  status: null,
+  communicationChannel: 'VOICE',
+  language: 'ru',
+};
+
 function formatTimer(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60).toString().padStart(2, '0');
+  const seconds = (safeSeconds % 60).toString().padStart(2, '0');
   return `${minutes}:${seconds}`;
 }
 
-function useRemainingTime(startedAt: string | undefined, limitSeconds: number, stopped: boolean) {
-  const [remaining, setRemaining] = useState(limitSeconds);
+function useSessionTimer(
+  startedAt: string | undefined,
+  endedAt: string | null | undefined,
+  limitSeconds: number,
+  stopped: boolean,
+) {
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!startedAt) return;
-    const update = () => {
-      const elapsed = Math.floor((Date.now() - Date.parse(startedAt)) / 1000);
-      setRemaining(Math.max(0, limitSeconds - elapsed));
-    };
-    update();
-    if (stopped) return;
-    const intervalId = window.setInterval(update, 1000);
+    setNow(Date.now());
+    if (stopped || endedAt) return;
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
-  }, [limitSeconds, startedAt, stopped]);
+  }, [endedAt, stopped]);
 
-  return { formatted: formatTimer(remaining), isLow: remaining <= 60 };
+  const startedMs = startedAt ? Date.parse(startedAt) : now;
+  const endedMs = endedAt ? Date.parse(endedAt) : now;
+  const elapsedSeconds = Math.max(0, Math.floor((endedMs - startedMs) / 1000));
+  const remainingSeconds = limitSeconds - elapsedSeconds;
+  const isExceeded = remainingSeconds < 0;
+  return {
+    elapsedSeconds,
+    isExceeded,
+    isLow: !isExceeded && remainingSeconds <= Math.min(60, Math.ceil(limitSeconds * 0.2)),
+    formatted: `${isExceeded ? '+' : ''}${formatTimer(Math.abs(remainingSeconds))}`,
+    label: isExceeded ? 'Превышение' : 'Осталось',
+  };
 }
 
-function validateCard(card: StudentOperatorCard): CardErrors {
+function answerFor(input: StudentCardInput, questionId: string): QuestionAnswer | undefined {
+  return input.incident?.answers.find((answer) => answer.questionId === questionId);
+}
+
+function validateCard(
+  input: StudentCardInput,
+  form: StudentCardForm,
+  calculation: CardCalculation | null,
+): CardErrors {
   const errors: CardErrors = {};
-  if (!card.incidentType) errors.incidentType = 'Выберите тип происшествия.';
-  if (!card.address?.trim()) errors.address = 'Укажите адрес происшествия.';
-  if (!String(card.facts.description ?? '').trim()) errors.description = 'Опишите обстоятельства происшествия.';
-  if (card.requiredServices.length === 0) errors.requiredServices = 'Выберите хотя бы одну необходимую службу.';
+  const selectedSigns = input.incident?.selectedSignIds ?? [];
+  const missingInputIds = new Set(calculation?.missingInputIds ?? []);
+  form.signGroups.forEach((group) => {
+    if ((group.required || missingInputIds.has(group.id))
+      && group.options.length > 0 && !selectedSigns[group.level - 1]) {
+      errors[`sign-${group.level}`] = 'Выберите признак этого уровня.';
+    }
+  });
+  form.questions.forEach((question) => {
+    const answer = answerFor(input, question.id);
+    const hasAnswer = question.inputType === 'TEXT'
+      ? Boolean(answer?.freeText?.trim())
+      : Boolean(answer?.optionIds?.length);
+    if ((question.required || missingInputIds.has(question.id)) && !hasAnswer) {
+      errors[`question-${question.id}`] = 'Ответьте на вопрос.';
+    }
+  });
+  if (!input.address?.displayAddress.trim()) errors.address = 'Укажите адрес происшествия.';
+  if (input.victims === null) errors.victims = 'Укажите, есть ли пострадавшие.';
   return errors;
 }
 
-function ReportView({ report }: { report: StudentSessionReport }) {
+function ReportView({
+  report,
+  elapsedSeconds,
+  timeLimitExceeded,
+}: {
+  report: StudentSessionReport;
+  elapsedSeconds: number;
+  timeLimitExceeded: boolean;
+}) {
   const passedCriteria = report.criteria.filter((criterion) => criterion.passed);
 
   return (
     <Stack className="student-report" gap="lg">
+      {timeLimitExceeded && (
+        <Alert color="red" icon={<IconClock size={18} />} title="Лимит времени превышен">
+          Фактическая длительность: {formatTimer(elapsedSeconds)}. Нарушение сохранено в состоянии сессии.
+        </Alert>
+      )}
       <Paper className="report-hero" withBorder radius="lg" p="xl">
         <div className="report-score" aria-label={`Оценка ${report.score} из ${report.maxScore}`}>
           <Text className="report-score__value">{report.score}</Text>
@@ -90,10 +150,11 @@ function ReportView({ report }: { report: StudentSessionReport }) {
           </Badge>
           <Title order={2} mt="sm">Разбор карточки</Title>
           <Text c="dimmed" mt={6}>
-            Mock-оценка показывает, что было сделано верно и где можно улучшить решение.
+            Итоговая оценка и рекомендации получены от Core/AI.
           </Text>
+          <Text size="sm" c="dimmed" mt={4}>Фактическая длительность: {formatTimer(elapsedSeconds)}</Text>
           <Progress
-            value={(report.score / report.maxScore) * 100}
+            value={report.maxScore ? (report.score / report.maxScore) * 100 : 0}
             color={report.passed ? 'teal' : 'orange'}
             size="md"
             radius="xl"
@@ -106,9 +167,7 @@ function ReportView({ report }: { report: StudentSessionReport }) {
       <div className="report-grid">
         <Paper withBorder radius="lg" p="xl">
           <Group gap="sm" mb="lg">
-            <ThemeIcon color="teal" variant="light" radius="xl">
-              <IconShieldCheck size={19} />
-            </ThemeIcon>
+            <ThemeIcon color="teal" variant="light" radius="xl"><IconShieldCheck size={19} /></ThemeIcon>
             <div>
               <Title order={3}>Выполненные критерии</Title>
               <Text size="sm" c="dimmed">{passedCriteria.length} из {report.criteria.length}</Text>
@@ -148,9 +207,7 @@ function ReportView({ report }: { report: StudentSessionReport }) {
                 </div>
               ))}
             </Stack>
-          ) : (
-            <Text size="sm">Карточка совпадает с ожидаемым решением сценария.</Text>
-          )}
+          ) : <Text size="sm">Карточка совпадает с ожидаемым решением сценария.</Text>}
         </Paper>
       </div>
 
@@ -163,9 +220,7 @@ function ReportView({ report }: { report: StudentSessionReport }) {
             <Title className="recommendations__title" order={3}>Рекомендации</Title>
             <Stack component="ul" gap={4} className="recommendations__list">
               {report.recommendations.map((recommendation) => (
-                <Text component="li" size="sm" c="dimmed" key={recommendation}>
-                  {recommendation}
-                </Text>
+                <Text component="li" size="sm" c="dimmed" key={recommendation}>{recommendation}</Text>
               ))}
             </Stack>
           </div>
@@ -175,31 +230,111 @@ function ReportView({ report }: { report: StudentSessionReport }) {
   );
 }
 
+function CalculationView({ calculation }: { calculation: CardCalculation | null }) {
+  if (!calculation) {
+    return (
+      <Paper className="calculation-panel" withBorder radius="lg" p="lg">
+        <Group gap="sm" align="flex-start" wrap="nowrap">
+          <ThemeIcon variant="light" color="blue"><IconRoute size={18} /></ThemeIcon>
+          <div>
+            <Text fw={650}>Результат Core</Text>
+            <Text size="sm" c="dimmed">Выберите признаки, чтобы Core определил тип и службы.</Text>
+          </div>
+        </Group>
+      </Paper>
+    );
+  }
+
+  const color = calculation.status === 'RESOLVED' ? 'teal' : calculation.status === 'NO_MATCH' ? 'red' : 'blue';
+  const statusLabel = calculation.status === 'RESOLVED'
+    ? 'Рассчитано'
+    : calculation.status === 'NO_MATCH' ? 'Совпадение не найдено' : 'Нужно уточнение';
+  return (
+    <Paper className="calculation-panel" withBorder radius="lg" p="lg" aria-label="Вычисленные поля Core">
+      <Group justify="space-between" align="flex-start" gap="md">
+        <div>
+          <Text className="section-eyebrow">Только для чтения</Text>
+          <Title order={3}>Результат Core</Title>
+        </div>
+        <Badge color={color} variant="light">{statusLabel}</Badge>
+      </Group>
+      {calculation.incidentType && (
+        <div className="calculation-summary">
+          <div>
+            <Text size="xs" c="dimmed">Тип происшествия</Text>
+            <Text fw={700}>{calculation.incidentType}</Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed">Код классификатора</Text>
+            <Text fw={700}>{calculation.classifierCode ?? '—'}</Text>
+          </div>
+        </div>
+      )}
+      {calculation.services.length > 0 && (
+        <div>
+          <Text fw={650} size="sm" mb="xs">Назначенные службы</Text>
+          <div className="calculated-services">
+            {calculation.services.map((service) => (
+              <div className="calculated-service" key={service.id}>
+                <Text size="sm" fw={650}>{service.displayName}</Text>
+                <Text size="xs" c="dimmed">{service.reasons[0]?.message ?? 'Рассчитано Core.'}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {calculation.explanations.length > 0 && (
+        <Stack component="ul" gap={4} className="calculation-explanations">
+          {calculation.explanations.map((explanation) => (
+            <Text component="li" size="xs" c="dimmed" key={explanation}>{explanation}</Text>
+          ))}
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
 export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   const [assignment, setAssignment] = useState<StudentAssignment | null>(null);
-  const [card, setCard] = useState<StudentOperatorCard | null>(null);
+  const [cardForm, setCardForm] = useState<StudentCardForm | null>(null);
+  const [input, setInput] = useState<StudentCardInput | null>(null);
+  const [calculation, setCalculation] = useState<CardCalculation | null>(null);
   const [report, setReport] = useState<StudentSessionReport | null>(null);
+  const [completedAt, setCompletedAt] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [errors, setErrors] = useState<CardErrors>({});
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const saveRevision = useRef(0);
+  const revisionRef = useRef(0);
+  const changeIdRef = useRef(0);
+  const saveTimerRef = useRef<number | null>(null);
+  const saveQueueRef = useRef<Promise<StudentSession | null>>(Promise.resolve(null));
+  const lastSavedRef = useRef('');
+  const lastEnqueuedRef = useRef('');
+  const inputRef = useRef<StudentCardInput | null>(null);
+  const calculationRef = useRef<CardCalculation | null>(null);
 
   const loadAssignment = useCallback(async () => {
     setLoadError('');
     setAssignment(null);
+    setCardForm(null);
     try {
       const loaded = await api.getAssignment();
+      const form = await api.getCardForm(loaded.session.id);
+      const loadedInput = loaded.session.card.input;
       setAssignment(loaded);
-      setCard(loaded.session.card);
+      setCardForm(form);
+      setInput(loadedInput);
+      inputRef.current = loadedInput;
+      setCalculation(loaded.session.card.calculation);
+      calculationRef.current = loaded.session.card.calculation;
       setReport(loaded.session.report);
-      const hasDraft = Boolean(
-        loaded.session.card.incidentType
-        || loaded.session.card.address
-        || loaded.session.card.requiredServices.length
-        || loaded.session.card.facts.description,
-      );
+      setCompletedAt(loaded.session.endedAt);
+      revisionRef.current = loaded.session.cardRevision;
+      lastSavedRef.current = JSON.stringify(loadedInput);
+      lastEnqueuedRef.current = '';
+      const hasDraft = loaded.session.cardRevision > 0;
       setSaveStatus(hasDraft ? 'saved' : 'idle');
     } catch (error) {
       setLoadError(getApiErrorMessage(error, 'Не удалось получить задание.'));
@@ -208,44 +343,119 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
   useEffect(() => {
     void loadAssignment();
+    return () => {
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    };
   }, [loadAssignment]);
 
-  const timer = useRemainingTime(
+  const timer = useSessionTimer(
     assignment?.session.startedAt,
-    assignment?.scenario.timeLimitSeconds ?? 0,
+    completedAt ?? assignment?.session.endedAt,
+    assignment?.session.timeLimitSeconds ?? assignment?.scenario.timeLimitSeconds ?? 0,
     Boolean(report),
   );
 
   const saveStatusText = useMemo(() => ({
     idle: '',
     saving: 'Сохраняем черновик…',
-    saved: 'Черновик сохранён локально',
+    saved: 'Черновик сохранён',
     error: 'Не удалось сохранить черновик',
   }[saveStatus]), [saveStatus]);
 
-  function updateCard(nextCard: StudentOperatorCard, field: CardField) {
-    if (!assignment) return;
-    setCard(nextCard);
-    setErrors((current) => ({ ...current, [field]: undefined }));
+  const enqueueSave = useCallback((snapshot: StudentCardInput, changeId: number) => {
+    if (!assignment) return Promise.resolve(null);
+    const serialized = JSON.stringify(snapshot);
+    if (serialized === lastSavedRef.current) {
+      if (changeId === changeIdRef.current) setSaveStatus('saved');
+      return saveQueueRef.current;
+    }
+    if (serialized === lastEnqueuedRef.current) return saveQueueRef.current;
+    lastEnqueuedRef.current = serialized;
+    const operation = saveQueueRef.current.catch(() => null).then(async () => {
+      const session = await api.saveCard(assignment.session.id, snapshot, revisionRef.current);
+      revisionRef.current = session.cardRevision;
+      lastSavedRef.current = serialized;
+      if (changeId === changeIdRef.current) {
+        calculationRef.current = session.card.calculation;
+        setCalculation(session.card.calculation);
+        setAssignment((current) => current ? { ...current, session } : current);
+        try {
+          const nextForm = await api.getCardForm(session.id);
+          setCardForm(nextForm);
+        } catch (error) {
+          setSubmitError(getApiErrorMessage(error, 'Черновик сохранён, но форму уточнений обновить не удалось.'));
+        }
+        setSaveStatus('saved');
+      }
+      return session;
+    }).catch((error: unknown) => {
+      if (lastEnqueuedRef.current === serialized) lastEnqueuedRef.current = '';
+      if (changeId === changeIdRef.current) {
+        setSaveStatus('error');
+        setSubmitError(getApiErrorMessage(error, 'Не удалось сохранить черновик.'));
+      }
+      throw error;
+    });
+    saveQueueRef.current = operation;
+    return operation;
+  }, [api, assignment]);
+
+  function updateInput(nextInput: StudentCardInput, clearedErrors: string[] = []) {
+    inputRef.current = nextInput;
+    setInput(nextInput);
+    setErrors((current) => {
+      const next = { ...current };
+      clearedErrors.forEach((field) => { next[field] = undefined; });
+      return next;
+    });
     setSubmitError('');
     setSaveStatus('saving');
-    const revision = ++saveRevision.current;
-    void api.saveCard(assignment.session.id, nextCard)
-      .then(() => {
-        if (revision === saveRevision.current) setSaveStatus('saved');
-      })
-      .catch((error: unknown) => {
-        if (revision === saveRevision.current) {
-          setSaveStatus('error');
-          setSubmitError(getApiErrorMessage(error, 'Не удалось сохранить черновик.'));
-        }
-      });
+    const changeId = ++changeIdRef.current;
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void enqueueSave(nextInput, changeId).catch(() => undefined);
+    }, 300);
+  }
+
+  async function flushDraft() {
+    if (!inputRef.current) return null;
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    return enqueueSave(inputRef.current, changeIdRef.current);
+  }
+
+  function updateSigns(level: 1 | 2 | 3, value: string | null) {
+    if (!input) return;
+    const selected = [...(input.incident?.selectedSignIds ?? [])].slice(0, level - 1);
+    if (value) selected.push(value);
+    updateInput({
+      ...input,
+      incident: { selectedSignIds: selected, answers: [] },
+    }, [`sign-${level}`, ...cardForm?.questions.map((question) => `question-${question.id}`) ?? []]);
+  }
+
+  function updateQuestion(questionId: string, nextAnswer: QuestionAnswer) {
+    if (!input) return;
+    const answers = (input.incident?.answers ?? []).filter((answer) => answer.questionId !== questionId);
+    if ((nextAnswer.optionIds?.length ?? 0) > 0 || Boolean(nextAnswer.freeText?.trim())) {
+      answers.push(nextAnswer);
+    }
+    updateInput({
+      ...input,
+      incident: {
+        selectedSignIds: input.incident?.selectedSignIds ?? [],
+        answers,
+      },
+    }, [`question-${questionId}`]);
   }
 
   async function submitCard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!assignment || !card) return;
-    const nextErrors = validateCard(card);
+    if (!assignment || !input || !cardForm) return;
+    const nextErrors = validateCard(input, cardForm, calculationRef.current);
     setErrors(nextErrors);
     setSubmitError('');
     if (Object.keys(nextErrors).length > 0) {
@@ -255,12 +465,19 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
     setIsSubmitting(true);
     try {
-      const result = await api.submitCard(assignment.session.id, card);
+      await flushDraft();
+      const currentCalculation = calculationRef.current;
+      if (!currentCalculation || currentCalculation.status !== 'RESOLVED'
+        || currentCalculation.missingInputIds.length > 0) {
+        throw new Error('Core ещё не завершил расчёт. Проверьте признаки и дополнительные вопросы.');
+      }
+      const result = await api.submitCard(assignment.session.id, inputRef.current!, revisionRef.current);
       setReport(result);
+      setCompletedAt(new Date().toISOString());
     } catch (error) {
       setSubmitError(getApiErrorMessage(
         error,
-        'Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.',
+        error instanceof Error ? error.message : 'Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.',
       ));
     } finally {
       setIsSubmitting(false);
@@ -268,27 +485,26 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   }
 
   if (loadError) {
-    return (
-      <ErrorState
-        title="Не удалось получить задание"
-        description={loadError}
-        onRetry={() => void loadAssignment()}
-      />
-    );
+    return <ErrorState title="Не удалось получить задание" description={loadError} onRetry={() => void loadAssignment()} />;
   }
 
-  if (!assignment || !card) {
+  if (!assignment || !input || !cardForm) {
     return <LoadingState title="Получаем задание" description="Подготавливаем сценарий и карточку происшествия." />;
   }
+
+  const selectedSigns = input.incident?.selectedSignIds ?? [];
+  const caller = input.caller ?? emptyCaller;
+  const phone = caller.phoneNumbers[0]?.value ?? '';
+  const timeLimitExceeded = timer.isExceeded || assignment.session.timeLimitExceeded;
 
   return (
     <Stack className="student-page" gap="xl">
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Text className="page-eyebrow">Учебная сессия</Text>
+          <Text className="page-eyebrow">Учебная сессия · классификатор {cardForm.classifierVersion}</Text>
           <Title order={1}>{report ? 'Результат задания' : 'Моё задание'}</Title>
           <Text c="dimmed" mt={5}>
-            {report ? 'Изучите разбор mock-оценки.' : 'Изучите сообщение и заполните карточку происшествия.'}
+            {report ? 'Изучите разбор, сформированный Core/AI.' : 'Фиксируйте факты — тип и службы рассчитает Core.'}
           </Text>
         </div>
         {!report && saveStatus !== 'idle' && (
@@ -304,94 +520,282 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
           <Title order={2}>{assignment.scenario.title}</Title>
           <Text className="assignment-brief__profile" mt="sm">{assignment.scenario.profile}</Text>
         </div>
-        <div className={`assignment-timer${timer.isLow ? ' assignment-timer--low' : ''}`}>
+        <div className={`assignment-timer${timer.isLow ? ' assignment-timer--low' : ''}${timeLimitExceeded ? ' assignment-timer--exceeded' : ''}`}>
           <IconClock size={21} stroke={1.8} aria-hidden="true" />
           <div>
-            <Text size="xs">Осталось</Text>
+            <Text size="xs">{timeLimitExceeded ? 'Превышение' : timer.label}</Text>
             <Text className="assignment-timer__value" data-testid="assignment-timer">{timer.formatted}</Text>
           </div>
         </div>
       </Paper>
 
       {report ? (
-        <ReportView report={report} />
+        <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
       ) : (
         <Paper component="form" className="incident-form" withBorder radius="lg" p="xl" onSubmit={submitCard} noValidate>
           <div>
             <Title order={2}>Карточка происшествия</Title>
-            <Text c="dimmed" size="sm" mt={5}>Поля со звёздочкой обязательны.</Text>
+            <Text c="dimmed" size="sm" mt={5}>Поля со звёздочкой обязательны. Выводы Core недоступны для редактирования.</Text>
           </div>
 
           {submitError && (
-            <Alert
-              color="red"
-              icon={<IconAlertCircle size={18} />}
-              withCloseButton
-              onClose={() => setSubmitError('')}
-            >
+            <Alert color="red" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setSubmitError('')}>
               {submitError}
             </Alert>
           )}
 
-          <div className="incident-form__grid">
-            <Select
-              label="Тип происшествия"
-              placeholder="Выберите тип"
-              data={incidentTypeOptions}
-              value={card.incidentType}
-              onChange={(value) => updateCard({ ...card, incidentType: value }, 'incidentType')}
-              error={errors.incidentType}
-              required
-              searchable
+          <section className="card-section" aria-labelledby="signs-heading">
+            <div>
+              <Text className="section-eyebrow">Шаг 1</Text>
+              <Title id="signs-heading" order={3}>Признаки происшествия</Title>
+              <Text size="sm" c="dimmed">Каждый выбор запрашивает у Core следующий доступный уровень.</Text>
+            </div>
+            <div className="incident-form__grid incident-form__grid--three">
+              {cardForm.signGroups.map((group) => (
+                <Select
+                  key={group.id}
+                  label={`${group.level}. ${group.label}`}
+                  placeholder={group.options.length ? 'Выберите признак' : 'Сначала заполните предыдущий уровень'}
+                  data={group.options.map((option) => ({ value: option.id, label: option.label }))}
+                  value={selectedSigns[group.level - 1] ?? null}
+                  onChange={(value) => updateSigns(group.level, value)}
+                  error={errors[`sign-${group.level}`]}
+                  required={group.required}
+                  disabled={group.level > 1 && group.options.length === 0}
+                  searchable
+                  clearable
+                />
+              ))}
+            </div>
+          </section>
+
+          {cardForm.questions.length > 0 && (
+            <section className="card-section" aria-labelledby="questions-heading">
+              <div>
+                <Text className="section-eyebrow">Шаг 2</Text>
+                <Title id="questions-heading" order={3}>Дополнительные вопросы</Title>
+                <Text size="sm" c="dimmed">Набор вопросов зависит от выбранного пути признаков.</Text>
+              </div>
+              <div className="question-grid">
+                {cardForm.questions.map((question) => {
+                  const answer = answerFor(input, question.id);
+                  const error = errors[`question-${question.id}`];
+                  const required = question.required || calculation?.missingInputIds.includes(question.id) === true;
+                  if (question.inputType === 'TEXT') {
+                    return (
+                      <Textarea
+                        key={question.id}
+                        label={question.label}
+                        value={answer?.freeText ?? ''}
+                        onChange={(event) => updateQuestion(question.id, {
+                          questionId: question.id,
+                          freeText: event.currentTarget.value,
+                        })}
+                        error={error}
+                        required={required}
+                      />
+                    );
+                  }
+                  if (question.inputType === 'MULTI_SELECT') {
+                    return (
+                      <div className="question-card" key={question.id}>
+                        <Text size="sm" fw={500}>{question.label}</Text>
+                        <Checkbox.Group
+                          value={answer?.optionIds ?? []}
+                          onChange={(optionIds) => updateQuestion(question.id, { questionId: question.id, optionIds })}
+                        >
+                          <Stack gap="xs" mt="xs">
+                            {question.options.map((option) => (
+                              <Checkbox key={option.id} value={option.id} label={option.label} />
+                            ))}
+                          </Stack>
+                        </Checkbox.Group>
+                        {error && <Text c="red" size="xs" mt={6}>{error}</Text>}
+                      </div>
+                    );
+                  }
+                  if (question.options.length > 2) {
+                    return (
+                      <Select
+                        key={question.id}
+                        label={question.label}
+                        data={question.options.map((option) => ({ value: option.id, label: option.label }))}
+                        value={answer?.optionIds?.[0] ?? null}
+                        onChange={(value) => updateQuestion(question.id, {
+                          questionId: question.id,
+                          optionIds: value ? [value] : [],
+                        })}
+                        error={error}
+                        required={required}
+                      />
+                    );
+                  }
+                  return (
+                    <div className="question-card" key={question.id}>
+                      <Radio.Group
+                        label={question.label}
+                        value={answer?.optionIds?.[0] ?? ''}
+                        onChange={(value) => updateQuestion(question.id, { questionId: question.id, optionIds: [value] })}
+                        error={error}
+                        required={required}
+                      >
+                        <Group mt="xs">
+                          {question.options.map((option) => <Radio key={option.id} value={option.id} label={option.label} />)}
+                        </Group>
+                      </Radio.Group>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <section className="card-section" aria-labelledby="details-heading">
+            <div>
+              <Text className="section-eyebrow">Шаг 3</Text>
+              <Title id="details-heading" order={3}>Обстоятельства и заявитель</Title>
+            </div>
+            <Textarea
+              label="Описание со слов заявителя"
+              description="Фиксируйте наблюдаемые факты, не подменяя ими тип происшествия."
+              placeholder="Что произошло, какие угрозы наблюдает заявитель"
+              minRows={4}
+              value={input.description ?? ''}
+              onChange={(event) => updateInput({ ...input, description: event.currentTarget.value })}
             />
+            <div className="incident-form__grid incident-form__grid--three">
+              <TextInput
+                label="ФИО заявителя"
+                placeholder="Необязательно"
+                value={caller.fullName ?? ''}
+                onChange={(event) => updateInput({
+                  ...input,
+                  caller: { ...caller, fullName: event.currentTarget.value || null },
+                })}
+              />
+              <TextInput
+                label="Телефон заявителя"
+                placeholder="+7 900 000-00-00"
+                type="tel"
+                value={phone}
+                onChange={(event) => updateInput({
+                  ...input,
+                  caller: {
+                    ...caller,
+                    phoneNumbers: event.currentTarget.value
+                      ? [{ value: event.currentTarget.value, kind: 'PROVIDED', foreign: false }]
+                      : [],
+                  },
+                })}
+              />
+              <Select
+                label="Статус заявителя"
+                placeholder="Выберите статус"
+                clearable
+                data={[
+                  { value: 'EYEWITNESS', label: 'Очевидец' },
+                  { value: 'VICTIM', label: 'Пострадавший' },
+                  { value: 'RELATIVE', label: 'Родственник' },
+                  { value: 'ACQUAINTANCE', label: 'Знакомый' },
+                  { value: 'CHILD', label: 'Ребёнок' },
+                  { value: 'PARTICIPANT', label: 'Участник' },
+                  { value: 'OTHER', label: 'Другое' },
+                ]}
+                value={caller.status}
+                onChange={(value) => updateInput({
+                  ...input,
+                  caller: { ...caller, status: value as CallerInput['status'] },
+                })}
+              />
+            </div>
+          </section>
+
+          <section className="card-section" aria-labelledby="address-heading">
+            <div>
+              <Text className="section-eyebrow">Шаг 4</Text>
+              <Title id="address-heading" order={3}>Адрес происшествия</Title>
+              <Text size="sm" c="dimmed">Адрес сохраняется и строкой для отображения, и отдельными структурированными полями.</Text>
+            </div>
             <TextInput
-              label="Адрес"
-              placeholder="Улица, дом, корпус"
-              value={card.address ?? ''}
-              onChange={(event) => updateCard({ ...card, address: event.currentTarget.value }, 'address')}
+              label="Адрес одной строкой"
+              placeholder="Город, улица, дом, корпус, квартира"
+              value={input.address?.displayAddress ?? ''}
+              onChange={(event) => updateInput({
+                ...input,
+                address: { ...(input.address ?? { displayAddress: '' }), displayAddress: event.currentTarget.value },
+              }, ['address'])}
               error={errors.address}
               required
             />
-          </div>
+            <div className="structured-address-grid">
+              {([
+                ['region', 'Регион'],
+                ['locality', 'Населённый пункт'],
+                ['street', 'Улица'],
+                ['house', 'Дом'],
+                ['building', 'Корпус / строение'],
+                ['apartment', 'Квартира / помещение'],
+              ] as const).map(([field, label]) => (
+                <TextInput
+                  key={field}
+                  label={label}
+                  value={input.address?.[field] ?? ''}
+                  onChange={(event) => updateInput({
+                    ...input,
+                    address: {
+                      ...(input.address ?? { displayAddress: '' }),
+                      [field]: event.currentTarget.value || null,
+                    },
+                  })}
+                />
+              ))}
+            </div>
+          </section>
 
-          <Textarea
-            label="Описание"
-            description="Кратко зафиксируйте обстоятельства, угрозы и сведения о людях."
-            placeholder="Что произошло и кому может требоваться помощь"
-            minRows={5}
-            value={String(card.facts.description ?? '')}
-            onChange={(event) => updateCard({
-              ...card,
-              facts: { ...card.facts, description: event.currentTarget.value },
-            }, 'description')}
-            error={errors.description}
-            required
-          />
-
-          <div>
-            <Text component="label" fw={500} size="sm">
-              Необходимые службы <Text component="span" c="red" aria-hidden="true">*</Text>
-            </Text>
-            <Text size="xs" c="dimmed" mt={3}>Можно выбрать несколько вариантов.</Text>
-            <Checkbox.Group
-              value={card.requiredServices}
-              onChange={(value) => updateCard({ ...card, requiredServices: value }, 'requiredServices')}
+          <section className="card-section" aria-labelledby="victims-heading">
+            <div>
+              <Text className="section-eyebrow">Шаг 5</Text>
+              <Title id="victims-heading" order={3}>Пострадавшие</Title>
+            </div>
+            <Radio.Group
+              label="Есть пострадавшие?"
+              value={input.victims === null ? '' : input.victims.present ? 'yes' : 'no'}
+              onChange={(value) => updateInput({
+                ...input,
+                victims: { present: value === 'yes', count: null, threatToPeople: null },
+              }, ['victims'])}
+              error={errors.victims}
+              required
             >
-              <div className="service-options">
-                {serviceOptions.map((service) => (
-                  <Checkbox.Card key={service.value} value={service.value} radius="md" p="md">
-                    <Group wrap="nowrap" align="flex-start">
-                      <Checkbox.Indicator />
-                      <Text size="sm" fw={550}>{service.label}</Text>
-                    </Group>
-                  </Checkbox.Card>
-                ))}
+              <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
+            </Radio.Group>
+            {input.victims?.present && (
+              <div className="incident-form__grid">
+                <NumberInput
+                  label="Количество пострадавших"
+                  min={0}
+                  value={input.victims.count ?? ''}
+                  onChange={(value) => updateInput({
+                    ...input,
+                    victims: { ...input.victims!, count: typeof value === 'number' ? value : null },
+                  })}
+                />
+                <Radio.Group
+                  label="Есть угроза людям?"
+                  value={input.victims.threatToPeople === null || input.victims.threatToPeople === undefined
+                    ? '' : input.victims.threatToPeople ? 'yes' : 'no'}
+                  onChange={(value) => updateInput({
+                    ...input,
+                    victims: { ...input.victims!, threatToPeople: value === 'yes' },
+                  })}
+                >
+                  <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
+                </Radio.Group>
               </div>
-            </Checkbox.Group>
-            {errors.requiredServices && (
-              <Text c="red" size="xs" mt={6} role="alert">{errors.requiredServices}</Text>
             )}
-          </div>
+          </section>
+
+          <CalculationView calculation={calculation} />
 
           <Divider />
           <Group justify="space-between" gap="md" className="incident-form__footer">

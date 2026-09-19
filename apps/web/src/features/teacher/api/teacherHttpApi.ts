@@ -1,10 +1,8 @@
 import { normalizeScenario, normalizeSession } from '../../../api/adapters';
 import type { ApiConfig } from '../../../api/config';
 import { createHttpClient, type HttpClient } from '../../../api/httpClient';
-import { getBrowserStorage } from '../../../api/mockStorage';
+import { apiTeacherSessionStorageKey, getBrowserStorage } from '../../../api/mockStorage';
 import type { TeacherApi, TeacherScenario, TeacherSession } from './types';
-
-const activeSessionKey = 'sirena-112:api-teacher-session';
 
 function toTeacherSession(value: unknown, fallbackStartedAt?: string | null): TeacherSession {
   const session = normalizeSession(value);
@@ -23,18 +21,18 @@ export function createTeacherHttpApi(
   function readCachedSession(): TeacherSession | null {
     if (!storage) return null;
     try {
-      const raw = storage.getItem(activeSessionKey);
+      const raw = storage.getItem(apiTeacherSessionStorageKey);
       return raw ? toTeacherSession(JSON.parse(raw)) : null;
     } catch {
-      storage.removeItem(activeSessionKey);
+      storage.removeItem(apiTeacherSessionStorageKey);
       return null;
     }
   }
 
   function cacheSession(session: TeacherSession | null) {
     if (!storage) return;
-    if (session) storage.setItem(activeSessionKey, JSON.stringify(session));
-    else storage.removeItem(activeSessionKey);
+    if (session) storage.setItem(apiTeacherSessionStorageKey, JSON.stringify(session));
+    else storage.removeItem(apiTeacherSessionStorageKey);
   }
 
   return {
