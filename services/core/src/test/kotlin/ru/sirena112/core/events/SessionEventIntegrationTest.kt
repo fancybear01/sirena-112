@@ -49,7 +49,8 @@ class SessionEventIntegrationTest {
                 "card.answers_updated",
                 "routing.calculated",
                 "operator.card_updated",
-                "operator.answer_submitted",
+                "operator.answer_submitted"
+            ) + List(14) { "service.assigned" } + listOf(
                 "session.completed",
                 "score.started",
                 "score.completed"

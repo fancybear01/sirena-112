@@ -199,3 +199,55 @@ ws://localhost:8080/ws/sessions/{sessionId}/events
 `AiClient` и `MediaClient` представлены `MockAiClient` и `MockMediaClient`.
 Они не выполняют сетевых вызовов, поэтому Core запускается без Python AI и Go
 Media; реальные адаптеры можно подключить через те же интерфейсы.
+## Назначения ДДС — задача #37
+
+После успешного `POST /api/student/sessions/{sessionId}/submit` создаются назначения
+для `calculation.services` отправленной карточки. Сохранение черновика и вычисление
+маршрутизации сами по себе не считаются оповещением. Повторное внутреннее создание
+идемпотентно; состав адресатов и cardRevision фиксируются один раз. Реальные службы
+не вызываются. Назначения и история пока **in-memory**, как сессии: переживают
+повторные HTTP-запросы, но не перезапуск процесса. Контакты ведомств не выдумываются.
+
+Чтение: `GET /api/student/sessions/{sessionId}/service-assignments` или такой же
+путь `/api/teacher/...`. До отправки карточки — `[]`, неизвестная сессия — 404.
+Полная история включена в каждое назначение. Общий WebSocket
+`/ws/sessions/{sessionId}/events` передаёт `service.assigned` и `service.status_changed`.
+
+Автомат переходов:
+
+- `ADDED → RECEIVED → ACCEPTED → RESPONDING → ARRIVED → COMPLETED`.
+- Из RECEIVED и ACCEPTED можно перейти в REFUSED (непустая refusalReason обязательна).
+- Из любого незакрытого статуса можно перейти в FAILED.
+- COMPLETED, REFUSED, FAILED — терминальные; повтор статуса/недопустимый переход — 409.
+- Каждый переход сохраняет eventId, sequence, timestamp UTC, источник и комментарий.
+  Повтор eventId явно отклоняется с 409 без изменения истории, даже для другой службы.
+
+Статусы служб независимы друг от друга и от TrainingSession.state: учебная сессия
+может быть SCORED, а службы ещё реагировать. `CORE_SERVICE_ASSIGNMENT_DEADLINE_SECONDS`
+(по умолчанию 3600, строго >0) задаёт срок с момента назначения. `overdue=true`
+означает «не завершено в срок» для незакрытого назначения. Просрочка не подменяет
+статус, не дописывает историю и не запускает фоновых уведомлений. Для завершённых
+история позволяет проверить, был ли переход выполнен после deadlineAt.
+
+Для локальной симуляции в PowerShell перед запуском Core:
+
+```powershell
+$env:CORE_SERVICE_ASSIGNMENT_MOCK_UPDATES_ENABLED = 'true'
+$env:CORE_SERVICE_ASSIGNMENT_DEADLINE_SECONDS = '120'
+.\gradlew.bat bootRun
+```
+
+После отправки карточки получите sessionId и assignmentId через API чтения, затем:
+
+```http
+POST /api/mock/sessions/{sessionId}/service-assignments/{assignmentId}/status
+Content-Type: application/json
+
+{"eventId":"eaa138be-2d41-42d3-80d0-f7c4df6a0ba2","status":"RECEIVED","comment":"Получено диспетчером"}
+```
+
+Для каждого следующего перехода используйте новый UUID. Источник сервер фиксирует
+как MOCK, передать source/timestamp/status истории из клиента нельзя. Mock endpoint
+отключён по умолчанию (404); включать только на изолированном учебном стенде:
+авторизация и реальная интеграция ДДС в эту задачу не входят. OpenAPI/Swagger-примеры:
+`contracts/openapi.yaml`; конверты: `contracts/events.md`.
