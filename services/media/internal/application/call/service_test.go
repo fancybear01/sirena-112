@@ -2,8 +2,11 @@ package call_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/fancybear01/sirena-112/services/media/internal/application/call"
@@ -25,7 +28,10 @@ func (f *fakeAsterisk) Hangup(ctx context.Context, channelID string) error {
 	f.hangups++
 	return nil
 }
-func (f *fakeAsterisk) DestroyCall(ctx context.Context, res ports.CallResources) error { return nil }
+func (f *fakeAsterisk) DestroyCall(ctx context.Context, res ports.CallResources) error {
+	f.hangups++
+	return nil
+}
 func (f *fakeAsterisk) Subscribe(ctx context.Context, handler ports.EventHandler) error {
 	return nil
 }
@@ -71,5 +77,147 @@ func TestStartHangupPublishesEvents(t *testing.T) {
 	_, err = svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// callbackAsterisk can deliver events before StartCall returns, as real ARI does.
+type callbackAsterisk struct {
+	fakeAsterisk
+	start   func(ports.StartCallRequest) (ports.CallResources, error)
+	destroy func(context.Context, ports.CallResources) error
+}
+
+func (f *callbackAsterisk) StartCall(ctx context.Context, req ports.StartCallRequest) (ports.CallResources, error) {
+	return f.start(req)
+}
+func (f *callbackAsterisk) DestroyCall(ctx context.Context, res ports.CallResources) error {
+	if f.destroy != nil {
+		return f.destroy(ctx, res)
+	}
+	return nil
+}
+
+func TestEarlyEventsAndConcurrentHangup(t *testing.T) {
+	ast := &callbackAsterisk{}
+	core := &fakeCore{}
+	svc := call.NewService(ast, core, slog.Default())
+	var cleanups atomic.Int32
+	ast.destroy = func(ctx context.Context, _ ports.CallResources) error { cleanups.Add(1); return ctx.Err() }
+	ast.start = func(req ports.StartCallRequest) (ports.CallResources, error) {
+		svc.HandleARIEvent(ports.ARIEvent{CallID: req.CallID, ChannelID: "early", Type: "ChannelStateChange", State: "Up"})
+		return ports.CallResources{ChannelID: "early"}, nil
+	}
+	c, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s", AISessionID: "ai", SIPAddress: "1001"})
+	if err != nil || c.State != domain.CallStateActive {
+		t.Fatalf("early answer lost: %+v %v", c, err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = svc.Get(c.ID)
+			_, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID})
+			if err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if cleanups.Load() != 1 {
+		t.Fatalf("cleanups=%d", cleanups.Load())
+	}
+	if c.State != domain.CallStateActive {
+		t.Fatal("returned snapshot mutated")
+	}
+	want := []string{domain.EventCallRinging, domain.EventCallAnswered, domain.EventCallEnded}
+	if len(core.events) != len(want) {
+		t.Fatalf("events=%+v", core.events)
+	}
+	for i, typ := range want {
+		if core.events[i].Type != typ {
+			t.Fatalf("events=%+v", core.events)
+		}
+	}
+}
+
+func TestConcurrentStartReservesSession(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	ast := &callbackAsterisk{start: func(req ports.StartCallRequest) (ports.CallResources, error) {
+		close(entered)
+		<-release
+		return ports.CallResources{ChannelID: req.CallID}, nil
+	}}
+	svc := call.NewService(ast, &fakeCore{}, slog.Default())
+	cmd := call.StartCommand{SessionID: "s", AISessionID: "ai", SIPAddress: "1001"}
+	done := make(chan error, 1)
+	go func() { _, err := svc.Start(context.Background(), cmd); done <- err }()
+	<-entered
+	_, err := svc.Start(context.Background(), cmd)
+	close(release)
+	if !errors.Is(err, domain.ErrCallExists) {
+		t.Fatalf("expected conflict: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	svc.Shutdown(context.Background())
+	if _, err := svc.Start(context.Background(), cmd); !errors.Is(err, domain.ErrARIUnavailable) {
+		t.Fatalf("start after shutdown: %v", err)
+	}
+}
+
+func TestFailedStartCanRetryAndEarlyHangupCleansUp(t *testing.T) {
+	ast := &callbackAsterisk{}
+	svc := call.NewService(ast, &fakeCore{}, slog.Default())
+	cmd := call.StartCommand{SessionID: "s", AISessionID: "ai", SIPAddress: "1001"}
+	ast.start = func(ports.StartCallRequest) (ports.CallResources, error) {
+		return ports.CallResources{}, errors.New("dial failed")
+	}
+	if _, err := svc.Start(context.Background(), cmd); err == nil {
+		t.Fatal("expected failure")
+	}
+	cleaned := false
+	ast.destroy = func(context.Context, ports.CallResources) error { cleaned = true; return nil }
+	ast.start = func(req ports.StartCallRequest) (ports.CallResources, error) {
+		svc.HandleARIEvent(ports.ARIEvent{CallID: req.CallID, Type: "ChannelDestroyed"})
+		return ports.CallResources{ChannelID: req.CallID}, nil
+	}
+	c, err := svc.Start(context.Background(), cmd)
+	if err != nil || c.State != domain.CallStateEnded || !cleaned {
+		t.Fatalf("early hangup: %+v %v cleaned=%v", c, err, cleaned)
+	}
+}
+
+func TestCleanupFailureIsReportedAndRetryable(t *testing.T) {
+	ast := &callbackAsterisk{start: func(req ports.StartCallRequest) (ports.CallResources, error) {
+		return ports.CallResources{ChannelID: req.CallID}, nil
+	}}
+	svc := call.NewService(ast, &fakeCore{}, slog.Default())
+	c, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s", AISessionID: "ai", SIPAddress: "1001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.destroy = func(ctx context.Context, _ ports.CallResources) error {
+		if ctx.Err() != nil {
+			t.Fatal("cancelled cleanup")
+		}
+		return errors.New("ARI down")
+	}
+	if _, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID}); err == nil {
+		t.Fatal("cleanup failure swallowed")
+	}
+	if _, err := svc.Get(c.ID); err != nil {
+		t.Fatal("lost IDs needed for retry")
+	}
+	ast.destroy = func(context.Context, ports.CallResources) error { return nil }
+	if _, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Get(c.ID); !errors.Is(err, domain.ErrCallNotFound) {
+		t.Fatalf("not removed: %v", err)
+	}
+	if _, err := svc.Hangup(context.Background(), call.HangupCommand{}); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("empty hangup: %v", err)
 	}
 }

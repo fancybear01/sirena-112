@@ -1,4 +1,4 @@
-package ari_test
+package ari
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/fancybear01/sirena-112/services/media/internal/adapters/asterisk/ari"
 	"github.com/fancybear01/sirena-112/services/media/internal/application/ports"
 	"log/slog"
 	"os"
@@ -40,7 +39,7 @@ func TestReadyAgainstMockARI(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := ari.NewClient(ari.Config{
+	client := NewClient(Config{
 		BaseURL:       srv.URL + "/ari",
 		Username:      "media",
 		Password:      "secret",
@@ -51,6 +50,10 @@ func TestReadyAgainstMockARI(t *testing.T) {
 		EchoFactory:   noopFactory{},
 		Log:           slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	})
+	if err := client.Ready(context.Background()); err == nil {
+		t.Fatal("ready without event stream")
+	}
+	client.connected.Store(true)
 	if err := client.Ready(context.Background()); err != nil {
 		t.Fatal(err)
 	}

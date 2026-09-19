@@ -24,6 +24,7 @@ type CallResources struct {
 // Asterisk controls telephony via ARI.
 type Asterisk interface {
 	Ready(ctx context.Context) error
+	// On error, nonempty resources must be retained and passed to DestroyCall for retry.
 	StartCall(ctx context.Context, req StartCallRequest) (CallResources, error)
 	Hangup(ctx context.Context, channelID string) error
 	DestroyCall(ctx context.Context, res CallResources) error
@@ -35,6 +36,7 @@ type EventHandler func(evt ARIEvent)
 
 // ARIEvent is a normalized Asterisk event.
 type ARIEvent struct {
+	CallID    string
 	Type      string
 	ChannelID string
 	State     string

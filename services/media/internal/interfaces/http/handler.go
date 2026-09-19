@@ -134,6 +134,8 @@ func (h *Handler) mapError(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, domain.ErrCallExists):
 		writeErr(w, http.StatusConflict, "conflict", err.Error())
+	case errors.Is(err, domain.ErrCapacityExhausted):
+		writeErr(w, http.StatusServiceUnavailable, "capacity_exhausted", "no RTP ports available")
 	case errors.Is(err, domain.ErrARIUnavailable):
 		writeErr(w, http.StatusServiceUnavailable, "ari_unavailable", err.Error())
 	default:

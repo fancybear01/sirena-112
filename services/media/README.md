@@ -2,8 +2,8 @@
 
 Go-сервис телефонно-аудиоконтура Сирена-112.
 
-Скрывает Asterisk (ARI/RTP) от Kotlin Core. В текущем MVP после ответа
-оператора поднимает `externalMedia` и делает **RTP echo** (μ-law). AI WebSocket
+Скрывает Asterisk (ARI/RTP) от Kotlin Core. В текущем MVP при запуске звонка создаёт bridge и `externalMedia`; после ответа
+оператора подключает SIP-канал к bridge и делает **RTP echo** (μ-law). AI WebSocket
 ещё не подключён — контракт уже есть в `contracts/media-ai.md`.
 
 Контракт Core↔Media: [`contracts/media-core.md`](../../contracts/media-core.md).
@@ -54,7 +54,7 @@ go run ./cmd/media
 | `ARI_BASE_URL` | e.g. `http://asterisk:8088/ari` |
 | `ARI_USERNAME` / `ARI_PASSWORD` | ARI user (not SIP 1001) |
 | `ARI_APP` | Stasis app name (`sirena-media`) |
-| `RTP_LISTEN_ADDR` / `RTP_PORT` | UDP listen for externalMedia |
+| `RTP_LISTEN_ADDR` / `RTP_PORT` / `RTP_PORT_END` | UDP host and inclusive port range for externalMedia |
 | `RTP_PUBLIC_HOST` | host Asterisk dials for RTP (`media` in compose) |
 | `CORE_BASE_URL` | reserved; events go to log stub in MVP |
 | `LOG_LEVEL` | `debug` / `info` / … |
@@ -114,7 +114,52 @@ curl -sS -X POST http://127.0.0.1:8091/internal/v1/calls/hangup \
 
 ```bash
 cd services/media
-go test ./...
+go test -race ./...
 go vet ./...
 go build ./cmd/media
 ```
+
+## Жизненный цикл и диагностика
+
+- `/ready` требует доступного ARI HTTP и подключённого WebSocket событий.
+  Пока WebSocket не подключён, `call.start` возвращает `503`.
+- `call.answered` публикуется только после подключения SIP-канала к bridge.
+  Ранние события во время запуска сохраняются до завершения инициализации.
+- Обрыв ARI WebSocket завершает текущий звонок с `FAILED` и запускает очистку:
+  события, пропущенные при переподключении, нельзя безопасно восстановить.
+- Отмена start откатывает созданные ресурсы независимо от контекста HTTP-запроса.
+  SIGINT/SIGTERM закрывает HTTP и освобождает активный звонок.
+- Если cleanup завершился ошибкой, hangup возвращает ошибку; ID ресурсов
+  остаются в памяти. Фоновая задача повторяет cleanup каждые 5 секунд;
+  повторный hangup тоже запускает очистку. Это относится и к rollback start.
+  RTP-порт остаётся зарезервированным до успешного cleanup в Asterisk.
+- RTP parser учитывает CSRC, extension и padding. Дубли и опоздавшие пакеты
+  отбрасываются; `lostPackets` считает обнаруженные пропуски последовательности,
+  без вычитания позднее пришедших пакетов. Смена SSRC сбрасывает последовательность.
+  PCMU timestamp растёт на фактическое число аудиосэмплов в пакете.
+
+Регрессионные тесты используют локальные HTTP/WebSocket ARI mocks и UDP.
+Они не заменяют smoke со звонком через настоящий Asterisk и softphone.
+
+## Несколько звонков и восстановление
+
+В Compose задан диапазон `18000–18099`: каждый звонок получает отдельный
+UDP-порт. Если `RTP_PORT_END` не задан, диапазон состоит только из `RTP_PORT`
+для совместимости со старой конфигурацией. Занятые другим процессом порты
+пропускаются. Когда свободных портов нет, start возвращает
+`503 capacity_exhausted`.
+
+События обрабатываются последовательно для каждого звонка в отдельной очереди
+(до 64 событий). Медленный ARI-запрос не блокирует общий реестр и WebSocket
+reader. Переполнение очереди завершает звонок с ошибкой, поскольку потеря
+событий могла бы оставить неверное состояние.
+
+При неудачном rollback сохраняется резерв sessionId: повторный start этой
+сессии получает `409` до завершения cleanup. При необходимости можно явно
+повторить hangup по `sessionId`, даже если start не вернул callId.
+
+Очередь очистки хранится только в памяти. После аварийного завершения процесса
+или `SIGKILL` автоматическое восстановление оставшихся ARI-ресурсов пока не
+реализовано. Штатная остановка освобождает звонки параллельно.
+
+Подключение AI описано в [AI WebSocket](docs/ai-websocket.md).
