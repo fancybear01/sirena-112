@@ -1,4 +1,6 @@
 import type {
+  CardFormDefinition,
+  OperatorCardInput,
   OperatorCard,
   Scenario,
   ScoreCriterion as CoreScoreCriterion,
@@ -9,6 +11,8 @@ import type {
 
 export type StudentScenario = Scenario;
 export type StudentOperatorCard = OperatorCard;
+export type StudentCardInput = OperatorCardInput;
+export type StudentCardForm = CardFormDefinition;
 export type ScoreCriterion = CoreScoreCriterion;
 export type ScoreError = CoreScoreError;
 export type StudentSessionReport = SessionReport;
@@ -26,6 +30,7 @@ export type StudentAssignment = {
 
 export interface StudentApi {
   getAssignment(): Promise<StudentAssignment>;
-  saveCard(sessionId: string, card: StudentOperatorCard): Promise<StudentSession>;
-  submitCard(sessionId: string, card: StudentOperatorCard): Promise<StudentSessionReport>;
+  getCardForm(sessionId: string): Promise<StudentCardForm>;
+  saveCard(sessionId: string, input: StudentCardInput, expectedRevision?: number): Promise<StudentSession>;
+  submitCard(sessionId: string, input: StudentCardInput, expectedRevision?: number): Promise<StudentSessionReport>;
 }

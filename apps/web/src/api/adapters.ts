@@ -1,7 +1,10 @@
 import { ApiError } from './errors';
 import {
   scenarioCategories,
+  type CardCalculation,
+  type OperatorCardInput,
   type OperatorCard,
+  type RoutedService,
   type Scenario,
   type Session,
   type SessionReport,
@@ -25,24 +28,115 @@ function requireString(value: unknown, field: string): string {
 
 export function normalizeOperatorCard(value: unknown): OperatorCard {
   const card = isRecord(value) ? value : {};
-  const facts = isRecord(card.facts) ? card.facts : {};
-  return {
-    incidentType: typeof card.incidentType === 'string' ? card.incidentType : null,
-    signs: isRecord(card.signs) && typeof card.signs.level1 === 'string'
-      ? {
-          level1: card.signs.level1,
-          level2: typeof card.signs.level2 === 'string' ? card.signs.level2 : null,
-          level3: typeof card.signs.level3 === 'string' ? card.signs.level3 : null,
-          additional: Array.isArray(card.signs.additional)
-            ? card.signs.additional.filter((item): item is string => typeof item === 'string')
-            : [],
-        }
+  const input = isRecord(card.input) ? card.input : {};
+  const caller = isRecord(input.caller) ? input.caller : null;
+  const incident = isRecord(input.incident) ? input.incident : null;
+  const address = isRecord(input.address) ? input.address : null;
+  const victims = isRecord(input.victims) ? input.victims : null;
+  const normalizedInput: OperatorCardInput = {
+    caller: caller ? {
+      phoneNumbers: Array.isArray(caller.phoneNumbers)
+        ? caller.phoneNumbers.filter(isRecord).flatMap((phone) => (
+            typeof phone.value === 'string'
+              ? [{
+                  value: phone.value,
+                  kind: phone.kind === 'AON' || phone.kind === 'ON_SCENE' ? phone.kind : 'PROVIDED' as const,
+                  foreign: phone.foreign === true,
+                }]
+              : []
+          ))
+        : [],
+      fullName: typeof caller.fullName === 'string' ? caller.fullName : null,
+      status: typeof caller.status === 'string' ? caller.status as NonNullable<OperatorCardInput['caller']>['status'] : null,
+      communicationChannel: typeof caller.communicationChannel === 'string'
+        ? caller.communicationChannel as NonNullable<OperatorCardInput['caller']>['communicationChannel']
+        : null,
+      language: typeof caller.language === 'string' ? caller.language : null,
+    } : null,
+    incident: incident ? {
+      selectedSignIds: Array.isArray(incident.selectedSignIds)
+        ? incident.selectedSignIds.filter((item): item is string => typeof item === 'string')
+        : [],
+      answers: Array.isArray(incident.answers)
+        ? incident.answers.filter(isRecord).flatMap((answer) => (
+            typeof answer.questionId === 'string'
+              ? [{
+                  questionId: answer.questionId,
+                  optionIds: Array.isArray(answer.optionIds)
+                    ? answer.optionIds.filter((item): item is string => typeof item === 'string')
+                    : undefined,
+                  freeText: typeof answer.freeText === 'string' ? answer.freeText : undefined,
+                }]
+              : []
+          ))
+        : [],
+    } : null,
+    address: address && typeof address.displayAddress === 'string'
+      ? address as OperatorCardInput['address']
       : null,
-    address: typeof card.address === 'string' ? card.address : null,
-    requiredServices: Array.isArray(card.requiredServices)
-      ? card.requiredServices.filter((item): item is string => typeof item === 'string')
-      : [],
-    facts,
+    description: typeof input.description === 'string' ? input.description : null,
+    victims: victims && typeof victims.present === 'boolean'
+      ? victims as OperatorCardInput['victims']
+      : null,
+    facts: isRecord(input.facts) ? input.facts : {},
+  };
+
+  const calculation = isRecord(card.calculation) ? card.calculation : null;
+  const normalizeService = (service: unknown): RoutedService | null => {
+    if (!isRecord(service) || typeof service.id !== 'string' || typeof service.displayName !== 'string') return null;
+    return {
+      id: service.id,
+      displayName: service.displayName,
+      reasons: Array.isArray(service.reasons)
+        ? service.reasons.filter(isRecord).flatMap((reason) => (
+            typeof reason.ruleId === 'string' && typeof reason.message === 'string'
+              ? [{
+                  ruleId: reason.ruleId,
+                  message: reason.message,
+                  matchedInputIds: Array.isArray(reason.matchedInputIds)
+                    ? reason.matchedInputIds.filter((item): item is string => typeof item === 'string')
+                    : [],
+                }]
+              : []
+          ))
+        : [],
+    };
+  };
+  const normalizedCalculation: CardCalculation | null = calculation
+    && (calculation.status === 'INCOMPLETE' || calculation.status === 'RESOLVED' || calculation.status === 'NO_MATCH')
+    && typeof calculation.classifierVersion === 'string'
+    ? {
+        status: calculation.status,
+        classifierVersion: calculation.classifierVersion,
+        classifierCode: typeof calculation.classifierCode === 'string' ? calculation.classifierCode : null,
+        incidentType: typeof calculation.incidentType === 'string' ? calculation.incidentType : null,
+        ekp35IncidentType: typeof calculation.ekp35IncidentType === 'string' ? calculation.ekp35IncidentType : null,
+        responseScenarioCode: typeof calculation.responseScenarioCode === 'string' ? calculation.responseScenarioCode : null,
+        responseScenarioStatus: typeof calculation.responseScenarioStatus === 'string'
+          ? calculation.responseScenarioStatus as CardCalculation['responseScenarioStatus']
+          : null,
+        mainServices: Array.isArray(calculation.mainServices)
+          ? calculation.mainServices.filter(isRecord).flatMap((service) => (
+              typeof service.id === 'string' && typeof service.displayName === 'string'
+                ? [{ id: service.id, displayName: service.displayName }]
+                : []
+            ))
+          : [],
+        services: Array.isArray(calculation.services)
+          ? calculation.services.map(normalizeService).filter((service): service is RoutedService => service !== null)
+          : [],
+        missingInputIds: Array.isArray(calculation.missingInputIds)
+          ? calculation.missingInputIds.filter((item): item is string => typeof item === 'string')
+          : [],
+        explanations: Array.isArray(calculation.explanations)
+          ? calculation.explanations.filter((item): item is string => typeof item === 'string')
+          : [],
+      }
+    : null;
+
+  return {
+    input: normalizedInput,
+    calculation: normalizedCalculation,
   };
 }
 
@@ -60,9 +154,12 @@ export function normalizeSession(value: unknown): Session {
     mode: 'CARD',
     state: state as SessionState,
     card: normalizeOperatorCard(value.card),
+    cardRevision: typeof value.cardRevision === 'number' ? value.cardRevision : 0,
     report: isRecord(value.report) ? value.report as SessionReport : null,
     startedAt: typeof value.startedAt === 'string' ? value.startedAt : null,
     endedAt: typeof value.endedAt === 'string' ? value.endedAt : null,
+    timeLimitSeconds: typeof value.timeLimitSeconds === 'number' ? value.timeLimitSeconds : 600,
+    timeLimitExceeded: value.timeLimitExceeded === true,
   };
 }
 

@@ -82,3 +82,15 @@ data class ScenarioResponse(
         )
     }
 }
+
+data class StudentAssignmentResponse(
+    val scenario: ScenarioResponse,
+    val session: SessionView
+)
+
+@RestController
+@RequestMapping("/api/student")
+class StudentAssignmentController(private val facade: CardTrainingFacade) {
+    @GetMapping("/assignments")
+    fun assignments(): List<StudentAssignmentResponse> = facade.assignments()
+}

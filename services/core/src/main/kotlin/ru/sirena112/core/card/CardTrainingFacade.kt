@@ -91,6 +91,19 @@ class CardTrainingFacade(
 
     fun scenarios(): List<Scenario> = scenarioRepository.findAll().sortedBy { it.groundTruth.classifierCode }
 
+    fun assignments(): List<StudentAssignmentResponse> = sessionRepository.findAll()
+        .asSequence()
+        .filter { it.state in setOf(SessionState.ACTIVE, SessionState.SCORING, SessionState.SCORED) }
+        .sortedWith(compareByDescending<TrainingSession> { it.state == SessionState.ACTIVE }
+            .thenByDescending { it.startedAt ?: it.createdAt })
+        .map { session ->
+            StudentAssignmentResponse(
+                scenario = ScenarioResponse.from(session.scenario),
+                session = session.toView()
+            )
+        }
+        .toList()
+
     fun cardForm(sessionId: UUID): CardFormDefinition {
         val session = requireSession(sessionId)
         return classifierService.buildForm(session.operatorCard.input)

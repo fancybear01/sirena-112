@@ -93,6 +93,14 @@ class CardTrainingControllerTest {
                 jsonPath("$.timeLimitExceeded") { value(false) }
             }
 
+        mockMvc.get("/api/student/assignments")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$[0].scenario.groundTruth.classifierCode") { value("1050602") }
+                jsonPath("$[0].session.id") { value(sessionId) }
+                jsonPath("$[0].session.state") { value("ACTIVE") }
+            }
+
         mockMvc.get("/api/student/sessions/$sessionId/card-form")
             .andExpect {
                 status { isOk() }

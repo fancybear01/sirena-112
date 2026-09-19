@@ -211,6 +211,13 @@ body { margin: 0; min-width: 320px; }
   box-shadow: 0 8px 24px rgba(44, 88, 126, .06);
 }
 .assignment-timer--low { color: #c44845; border-color: #f1c9c7; background: #fff8f7; }
+.assignment-timer--exceeded {
+  color: #9f2639;
+  border-color: #e69aa5;
+  background: #fff0f2;
+  box-shadow: 0 0 0 3px rgba(196, 72, 69, .08);
+}
+.assignment-timer--exceeded .assignment-timer__value { color: #9f2639; }
 .assignment-timer__value {
   color: #20334e;
   font-size: 24px;
@@ -232,6 +239,79 @@ body { margin: 0; min-width: 320px; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+.incident-form__grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid #e5ebf1;
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+.card-section h3,
+.calculation-panel h3 {
+  color: #263b55;
+  font-size: 18px;
+  letter-spacing: -.02em;
+}
+.section-eyebrow {
+  margin-bottom: 3px;
+  color: #4d7fae;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.question-card {
+  min-height: 76px;
+  padding: 12px 14px;
+  border: 1px solid #dfe7ef;
+  border-radius: 10px;
+  background: #fff;
+}
+.structured-address-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.calculation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-color: #bdd9d1;
+  background: linear-gradient(135deg, #fbfffd, #f1faf7);
+}
+.calculation-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr);
+  gap: 12px;
+}
+.calculation-summary > div {
+  padding: 12px 14px;
+  border: 1px solid #dcebe6;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .82);
+}
+.calculated-services {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 310px;
+  overflow: auto;
+}
+.calculated-service {
+  padding: 10px 12px;
+  border: 1px solid #dcebe6;
+  border-radius: 9px;
+  background: #fff;
+}
+.calculation-explanations { margin: 0; padding-left: 18px; }
 .service-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -311,6 +391,11 @@ body { margin: 0; min-width: 320px; }
   .assignment-brief { grid-template-columns: 1fr; gap: 20px; }
   .assignment-timer { width: 100%; justify-content: center; }
   .incident-form__grid,
+  .incident-form__grid--three,
+  .question-grid,
+  .structured-address-grid,
+  .calculation-summary,
+  .calculated-services,
   .service-options,
   .report-grid { grid-template-columns: 1fr; }
   .incident-form__footer { align-items: stretch; }

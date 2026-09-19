@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
+import type { StudentApi } from './api/types';
 import { StudentPage } from './StudentPage';
 import { createStudentMockApi } from './api/studentMockApi';
 
@@ -32,39 +33,136 @@ afterEach(() => {
 });
 
 function renderStudent(api = createStudentMockApi({ delayMs: 0, storage: null })) {
-  return render(
-    <MantineProvider>
-      <StudentPage api={api} />
-    </MantineProvider>,
-  );
+  return render(<MantineProvider><StudentPage api={api} /></MantineProvider>);
+}
+
+async function selectFirstOption(user: ReturnType<typeof userEvent.setup>, name: RegExp | string) {
+  const select = screen.getByRole('combobox', { name });
+  await user.click(select);
+  await user.keyboard('{ArrowDown}{Enter}');
+}
+
+async function chooseReferenceSigns(user: ReturnType<typeof userEvent.setup>) {
+  await selectFirstOption(user, /1\. Группа происшествия/);
+  await waitFor(() => expect(screen.getByRole('combobox', { name: /2\. Признак происшествия/ })).toBeEnabled());
+  await selectFirstOption(user, /2\. Признак происшествия/);
+  await waitFor(() => expect(screen.getByRole('combobox', { name: /3\. Уточнение признака/ })).toBeEnabled());
+  await selectFirstOption(user, /3\. Уточнение признака/);
+  await screen.findByRole('heading', { name: 'Дополнительные вопросы' });
+}
+
+async function answerReferenceQuestions(user: ReturnType<typeof userEvent.setup>) {
+  const yesNoQuestions = [
+    'Объект из перечня',
+    'Требуется эвакуация',
+    'Медицинская помощь',
+    'Нет доступа',
+    'Правонарушение',
+    'Угроза людям',
+    'Перекрытие движения',
+  ];
+  for (const name of yesNoQuestions) {
+    const group = screen.getByRole('radiogroup', { name });
+    await user.click(within(group).getByRole('radio', { name: 'Нет' }));
+  }
+  await selectFirstOption(user, 'Пострадавшие / погибшие');
 }
 
 async function fillValidCard(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('combobox', { name: /Тип происшествия/ }));
-  await user.keyboard('{ArrowDown}{Enter}');
-  await user.type(screen.getByLabelText(/Адрес/), 'ул. Лесная, д. 14');
-  await user.type(
-    screen.getByLabelText(/Описание/),
-    'Густой дым на лестничной площадке, на пятом этаже могут оставаться люди.',
-  );
-  await user.click(screen.getByRole('checkbox', { name: 'Пожарная охрана' }));
-  await user.click(screen.getByRole('checkbox', { name: 'Скорая помощь' }));
+  await chooseReferenceSigns(user);
+  await answerReferenceQuestions(user);
+  await user.type(screen.getByLabelText('Описание со слов заявителя'), 'Дым идёт из мусоропровода на первом этаже.');
+  await user.type(screen.getByLabelText(/Адрес одной строкой/), 'Учебный адрес, дом 1');
+  const victims = screen.getByRole('radiogroup', { name: /Есть пострадавшие/ });
+  await user.click(within(victims).getByRole('radio', { name: 'Нет' }));
 }
 
 describe('student assignment flow', () => {
-  it('shows the assigned scenario and timer without category, difficulty or idle save hint', async () => {
+  it('shows scenario 1050602, a timer and no editable computed fields', async () => {
     renderStudent();
     expect(await screen.findByRole('heading', { name: 'Моё задание', level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Пожар в жилом доме', level: 2 })).toBeInTheDocument();
-    const assignmentBrief = document.querySelector<HTMLElement>('.assignment-brief');
-    expect(assignmentBrief).not.toBeNull();
-    expect(within(assignmentBrief!).queryByText('Пожар')).not.toBeInTheDocument();
-    expect(within(assignmentBrief!).queryByText('Базовый уровень')).not.toBeInTheDocument();
-    expect(screen.queryByText('Изменения сохраняются автоматически')).not.toBeInTheDocument();
-    expect(screen.getByTestId('assignment-timer')).toHaveTextContent(/^\d{2}:\d{2}$/);
+    expect(screen.getByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 })).toBeInTheDocument();
+    expect(screen.getByText(/классификатор 046-2024-11-15/i)).toBeInTheDocument();
+    expect(screen.getByTestId('assignment-timer')).toHaveTextContent(/^\+?\d{2}:\d{2}$/);
+    expect(screen.queryByLabelText('Тип происшествия')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Необходимые службы')).not.toBeInTheDocument();
   });
 
-  it('does not submit an empty card and shows field validation', async () => {
+  it('requests the next sign level and dependent questions step by step', async () => {
+    const user = userEvent.setup();
+    renderStudent();
+    await screen.findByRole('heading', { name: 'Карточка происшествия' });
+    expect(screen.getByRole('combobox', { name: /2\. Признак происшествия/ })).toBeDisabled();
+    expect(screen.queryByRole('heading', { name: 'Дополнительные вопросы' })).not.toBeInTheDocument();
+
+    await selectFirstOption(user, /1\. Группа происшествия/);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /2\. Признак происшествия/ })).toBeEnabled());
+    expect(await screen.findByRole('heading', { name: 'Дополнительные вопросы' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /3\. Уточнение признака/ })).toBeDisabled();
+
+    await selectFirstOption(user, /2\. Признак происшествия/);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /3\. Уточнение признака/ })).toBeEnabled());
+    await selectFirstOption(user, /3\. Уточнение признака/);
+
+    expect(screen.getByRole('radiogroup', { name: 'Нет доступа' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('задымление: мусоропровод')).toBeInTheDocument());
+    expect(screen.getByText('Служба 101 (МЧС)')).toBeInTheDocument();
+  }, 10_000);
+
+  it('renders radio, checkbox, select and text questions from the form contract', async () => {
+    const base = createStudentMockApi({ delayMs: 0, storage: null });
+    const api: StudentApi = {
+      ...base,
+      getCardForm: async () => ({
+        classifierVersion: 'test',
+        signGroups: [],
+        questions: [
+          { id: 'radio', label: 'Один вариант', inputType: 'SINGLE_SELECT', required: true, options: [{ id: 'Y', label: 'Да' }, { id: 'N', label: 'Нет' }] },
+          { id: 'select', label: 'Выбор из списка', inputType: 'SINGLE_SELECT', required: true, options: [{ id: 'A', label: 'А' }, { id: 'B', label: 'Б' }, { id: 'C', label: 'В' }] },
+          { id: 'multi', label: 'Несколько вариантов', inputType: 'MULTI_SELECT', required: true, options: [{ id: 'M', label: 'Вариант М' }] },
+          { id: 'text', label: 'Свободный ответ', inputType: 'TEXT', required: true, options: [] },
+        ],
+      }),
+    };
+    renderStudent(api);
+    expect(await screen.findByRole('radiogroup', { name: 'Один вариант' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Выбор из списка/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Вариант М' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Свободный ответ/)).toBeInTheDocument();
+  });
+
+  it('removes an empty answer instead of sending an invalid QuestionAnswer to Core', async () => {
+    const user = userEvent.setup();
+    const base = createStudentMockApi({ delayMs: 0, storage: null });
+    const saveCard = vi.spyOn(base, 'saveCard');
+    const api: StudentApi = {
+      ...base,
+      getCardForm: async () => ({
+        classifierVersion: 'test',
+        signGroups: [],
+        questions: [{
+          id: 'multi',
+          label: 'Дополнительный признак',
+          inputType: 'MULTI_SELECT',
+          required: false,
+          options: [{ id: 'M', label: 'Вариант М' }],
+        }],
+      }),
+    };
+    renderStudent(api);
+    const address = await screen.findByLabelText(/Адрес одной строкой/);
+    await user.type(address, 'Учебный адрес');
+    const option = screen.getByRole('checkbox', { name: 'Вариант М' });
+    await user.click(option);
+    await user.click(option);
+
+    await waitFor(() => expect(saveCard).toHaveBeenCalled());
+    const latestInput = saveCard.mock.calls.at(-1)?.[1];
+    expect(latestInput?.incident?.answers).toEqual([]);
+    expect(screen.queryByText('Не удалось сохранить черновик.')).not.toBeInTheDocument();
+  });
+
+  it('validates only source fields required by the card contract', async () => {
     const user = userEvent.setup();
     const api = createStudentMockApi({ delayMs: 0, storage: null });
     const submit = vi.spyOn(api, 'submitCard');
@@ -75,37 +173,43 @@ describe('student assignment flow', () => {
 
     expect(submit).not.toHaveBeenCalled();
     expect(screen.getByText('Заполните обязательные поля перед отправкой карточки.')).toBeInTheDocument();
-    expect(screen.getByText('Выберите тип происшествия.')).toBeInTheDocument();
     expect(screen.getByText('Укажите адрес происшествия.')).toBeInTheDocument();
-    expect(screen.getByText('Опишите обстоятельства происшествия.')).toBeInTheDocument();
-    expect(screen.getByText('Выберите хотя бы одну необходимую службу.')).toBeInTheDocument();
+    expect(screen.getByText('Укажите, есть ли пострадавшие.')).toBeInTheDocument();
+    expect(screen.getByText('Выберите признак этого уровня.')).toBeInTheDocument();
   });
 
-  it('submits a completed card and displays an explainable score', async () => {
+  it('submits scenario 1050602 and displays the Core report', async () => {
     const user = userEvent.setup();
     renderStudent();
     await screen.findByRole('heading', { name: 'Карточка происшествия' });
     await fillValidCard(user);
-
     await user.click(screen.getByRole('button', { name: 'Отправить на оценку' }));
 
     expect(await screen.findByRole('heading', { name: 'Результат задания', level: 1 })).toBeInTheDocument();
     expect(screen.getByLabelText('Оценка 100 из 100')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Выполненные критерии' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ошибки' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Рекомендации' })).toBeInTheDocument();
-  });
+    expect(screen.getByText('Итоговая оценка и рекомендации получены от Core/AI.')).toBeInTheDocument();
+  }, 15_000);
 
-  it('restores a locally saved draft after remounting', async () => {
+  it('restores source input from the saved draft after remounting', async () => {
     const user = userEvent.setup();
     renderStudent(createStudentMockApi({ delayMs: 0, storage: window.localStorage }));
-    const address = await screen.findByLabelText(/Адрес/);
-    await user.type(address, 'ул. Лесная, д. 14');
-    await waitFor(() => expect(screen.getByText('Черновик сохранён локально')).toBeInTheDocument());
+    const address = await screen.findByLabelText(/Адрес одной строкой/);
+    await user.type(address, 'Учебный адрес, дом 1');
+    await waitFor(() => expect(screen.getByText('Черновик сохранён')).toBeInTheDocument());
 
     cleanup();
     renderStudent(createStudentMockApi({ delayMs: 0, storage: window.localStorage }));
-    expect(await screen.findByLabelText(/Адрес/)).toHaveValue('ул. Лесная, д. 14');
+    expect(await screen.findByLabelText(/Адрес одной строкой/)).toHaveValue('Учебный адрес, дом 1');
+  });
+
+  it('keeps entered input visible when Core save fails', async () => {
+    const user = userEvent.setup();
+    renderStudent(createStudentMockApi({ delayMs: 0, failSave: true, storage: null }));
+    const address = await screen.findByLabelText(/Адрес одной строкой/);
+    await user.type(address, 'Адрес не должен исчезнуть');
+    expect(address).toHaveValue('Адрес не должен исчезнуть');
+    expect(await screen.findByText('Не удалось сохранить черновик.')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Адрес одной строкой/)).toHaveValue('Адрес не должен исчезнуть');
   });
 
   it('shows loading errors with a retry action', async () => {
@@ -114,7 +218,7 @@ describe('student assignment flow', () => {
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument();
   });
 
-  it('keeps the form available when submission fails', async () => {
+  it('keeps the completed form available when submission fails', async () => {
     const user = userEvent.setup();
     renderStudent(createStudentMockApi({ delayMs: 0, failSubmit: true, storage: null }));
     await screen.findByRole('heading', { name: 'Карточка происшествия' });
@@ -122,6 +226,25 @@ describe('student assignment flow', () => {
     await user.click(screen.getByRole('button', { name: 'Отправить на оценку' }));
 
     expect(await screen.findByText('Не удалось отправить карточку. Данные сохранены — попробуйте ещё раз.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Отправить на оценку' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Адрес одной строкой/)).toHaveValue('Учебный адрес, дом 1');
+  }, 15_000);
+
+  it('shows overtime instead of freezing the timer at zero', async () => {
+    window.localStorage.setItem('sirena-112:teacher-session', JSON.stringify({
+      id: 'a13e08ea-220f-458a-95f6-95b7c3a3f14c',
+      scenarioId: '80c14c89-f2b7-527a-bd6f-268cdc3d4a11',
+      mode: 'CARD',
+      state: 'ACTIVE',
+      card: { input: {}, calculation: null },
+      cardRevision: 0,
+      report: null,
+      startedAt: new Date(Date.now() - 35_000).toISOString(),
+      endedAt: null,
+      timeLimitSeconds: 30,
+      timeLimitExceeded: true,
+    }));
+    renderStudent(createStudentMockApi({ delayMs: 0, storage: window.localStorage }));
+    expect(await screen.findByText('Превышение')).toBeInTheDocument();
+    expect(screen.getByTestId('assignment-timer')).toHaveTextContent(/^\+00:0[5-9]$/);
   });
 });
