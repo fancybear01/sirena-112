@@ -85,7 +85,8 @@ class CardTrainingFacade(
     private val scenarioRepository: ScenarioRepository,
     private val sessionRepository: TrainingSessionRepository,
     private val sessionService: TrainingSessionService,
-    private val classifierService: ClassifierService
+    private val classifierService: ClassifierService,
+    private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService
 ) {
     private val reports = java.util.concurrent.ConcurrentHashMap<UUID, SessionReport>()
 
@@ -147,6 +148,7 @@ class CardTrainingFacade(
         validateCard(session)
         emitTimeLimitEventOnce(session)
         sessionService.submitAnswer(session.id)
+        serviceAssignments.assignSubmittedCard(session.id)
         if (session.state == SessionState.ACTIVE) {
             sessionService.complete(session.id)
         }
