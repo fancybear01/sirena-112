@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test-build:
-    name: test-build
+    name: media / test-build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

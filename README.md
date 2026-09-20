@@ -43,7 +43,7 @@
 проверок; фильтры по путям намеренно не используются, чтобы изменение любого
 сервиса не могло пропустить регрессию общего контракта:
 
-- `branch-name / validate` — формат имени ветки;
+- `validate` (workflow `branch-name`) — формат имени ветки; имя сохранено для действующей защиты main;
 - `core / test` — unit- и integration-тесты Kotlin Core на Java 17;
 - `ai / test` — Python-тесты с dev-зависимостями;
 - `web / test-build` — typecheck, тесты и production build Web;
@@ -51,7 +51,7 @@
   `docker compose config` и сборка Asterisk без публикации образов;
 - `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев.
 
-Все перечисленные check names должны быть добавлены как required status checks
+Имена jobs уникальны между workflows. Все перечисленные check names должны быть добавлены как required status checks
 в правила защиты ветки `main`. Workflow запускаются для Pull Request и push в
 `main`, используют кэши только для зависимостей и отменяют устаревший запуск для
 той же ветки.

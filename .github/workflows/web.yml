@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test-build:
-    name: test-build
+    name: web / test-build
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: test
+    name: ai / test
     runs-on: ubuntu-latest
     defaults:
       run:

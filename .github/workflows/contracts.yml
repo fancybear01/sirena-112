@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   validate:
-    name: validate
+    name: contracts / validate
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
