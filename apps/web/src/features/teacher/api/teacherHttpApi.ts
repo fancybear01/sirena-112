@@ -1,6 +1,7 @@
 import { normalizeScenario, normalizeSession } from '../../../api/adapters';
 import type { ApiConfig } from '../../../api/config';
 import { createHttpClient, type HttpClient } from '../../../api/httpClient';
+import { ApiError } from '../../../api/errors';
 import { apiTeacherSessionStorageKey, getBrowserStorage } from '../../../api/mockStorage';
 import type { TeacherApi, TeacherScenario, TeacherSession } from './types';
 
@@ -47,8 +48,21 @@ export function createTeacherHttpApi(
     },
 
     async getCurrentSession() {
-      // OpenAPI has no teacher endpoint for the current session, so this UI convenience is local.
-      return readCachedSession();
+      const cached = readCachedSession();
+      if (!cached) return null;
+      try {
+        const current = toTeacherSession(await http.request(
+          `/api/student/sessions/${encodeURIComponent(cached.id)}`,
+        ));
+        cacheSession(current);
+        return current;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          cacheSession(null);
+          return null;
+        }
+        throw error;
+      }
     },
 
     async launchSession(scenarioId) {

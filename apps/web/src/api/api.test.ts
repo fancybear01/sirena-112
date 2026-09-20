@@ -20,6 +20,10 @@ describe('API configuration', () => {
       baseUrl: 'https://core.example.test',
     });
   });
+
+  it('uses the same-origin proxy in API mode when no URL is configured', () => {
+    expect(resolveApiConfig({ VITE_API_MODE: 'api' })).toEqual({ mode: 'api', baseUrl: '' });
+  });
 });
 
 describe('HTTP client', () => {

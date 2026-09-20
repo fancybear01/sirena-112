@@ -3,6 +3,7 @@ import type { HttpClient } from './httpClient';
 import { createStudentHttpApi } from '../features/student/api/studentHttpApi';
 import { createStudentMockApi } from '../features/student/api/studentMockApi';
 import { createTeacherHttpApi } from '../features/teacher/api/teacherHttpApi';
+import { ApiError } from './errors';
 
 const scenario = {
   id: '0c44dd40-9423-4e58-8905-fc7b45c26dd4',
@@ -73,6 +74,42 @@ describe('Core API adapters', () => {
       `/api/teacher/sessions/${activeSession.id}/start`,
       { method: 'POST' },
     );
+  });
+
+  it('restores the teacher session from Core after page reload', async () => {
+    const storage = {
+      getItem: vi.fn().mockReturnValue(JSON.stringify(activeSession)),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    } as unknown as Storage;
+    const scored = { ...activeSession, state: 'SCORED', report: {
+      sessionId: activeSession.id, score: 100, maxScore: 100, passed: true,
+      criteria: [], errors: [], recommendations: [],
+    } };
+    const request = vi.fn().mockResolvedValue(scored);
+    const api = createTeacherHttpApi({ baseUrl: '' }, { request } as HttpClient, storage);
+
+    await expect(api.getCurrentSession()).resolves.toMatchObject({
+      state: 'SCORED', report: { score: 100 },
+    });
+    expect(request).toHaveBeenCalledWith(`/api/student/sessions/${activeSession.id}`);
+    expect(storage.setItem).toHaveBeenCalled();
+  });
+
+  it('clears a stale teacher session only when Core confirms 404', async () => {
+    const storage = {
+      getItem: vi.fn().mockReturnValue(JSON.stringify(activeSession)),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    } as unknown as Storage;
+    const request = vi.fn().mockRejectedValueOnce(new ApiError('Unavailable', { status: 503 }))
+      .mockRejectedValueOnce(new ApiError('Missing', { status: 404 }));
+    const api = createTeacherHttpApi({ baseUrl: '' }, { request } as HttpClient, storage);
+
+    await expect(api.getCurrentSession()).rejects.toMatchObject({ status: 503 });
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    await expect(api.getCurrentSession()).resolves.toBeNull();
+    expect(storage.removeItem).toHaveBeenCalled();
   });
 
   it('adapts a student assignment, card form and input-only submit payload', async () => {

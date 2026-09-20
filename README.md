@@ -50,6 +50,7 @@
 - `media / test-build` — тесты, `go vet`, бинарник, Dockerfile Media,
   `docker compose config` и сборка Asterisk без публикации образов;
 - `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев.
+- `demo / smoke` — два полных занятия `1050602` через реальные Core и AI.
 
 Имена jobs уникальны между workflows. Все перечисленные check names должны быть добавлены как required status checks
 в правила защиты ветки `main`. Workflow запускаются для Pull Request и push в
@@ -72,6 +73,7 @@ Media Gateway: [`services/media/README.md`](services/media/README.md), конт�
 
 ## Ближайшая контрольная точка
 
-Сквозной карточный сценарий `1050602` доступен в mock-режиме и использует тот же
-доменный контракт, что HTTP-адаптер Core. Отдельно развивается SIP-вызов с
+Сквозной карточный сценарий `1050602` доступен через реальные Core, AI и Web.
+Команды запуска, автоматическая проверка и сценарий показа — в
+[`docs/demo-1050602.md`](docs/demo-1050602.md). Отдельно развивается SIP-вызов с
 возвратом тестового аудио.
