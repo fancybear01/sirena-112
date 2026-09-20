@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "sirena-ai"
 version = "0.1.0"
 description = "Sirena-112 AI service: сценарии, поведение абонента и оценка занятия"
-requires-python = ">=3.9"
+# Зависимости, добавленные вместе с проверкой контрактов, требуют 3.10:
+# на 3.9 окружение уже не собирается.
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
     "pydantic>=2.6",

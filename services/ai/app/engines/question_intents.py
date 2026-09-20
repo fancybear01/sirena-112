@@ -87,7 +87,9 @@ QUESTION_INTENTS: Dict[str, Dict[str, Tuple[str, ...]]] = {
             "опишите",
             "расскажите",
         ),
-        "facts": ("openFlame", "vehicles", "hazard"),
+        # description приходит из эталона сценария, остальное - необязательные
+        # подробности из facts, если их туда положили.
+        "facts": ("description", "openFlame", "vehicles", "hazard"),
     },
 }
 

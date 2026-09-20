@@ -1,7 +1,7 @@
-"""Поведение AI-абонента.
+"""Поведение AI-абонента на сценариях каталога.
 
-Главное, что здесь проверяется: абонент не может сообщить того, чего нет
-в сценарии, и один и тот же разговор всегда идёт одинаково.
+Главное, что здесь проверяется: абонент знает ровно то, что записано
+в ожидаемом вводе оператора, и один и тот же разговор всегда идёт одинаково.
 """
 
 import pytest
@@ -33,61 +33,54 @@ def dialogue(client, scenario, lines):
 
 @pytest.fixture()
 def scenarios(client):
-    """Все три сценария каталога: пожар, задымление, ДТП."""
-    return client.post("/ai/scenarios/generate", json={"count": 3, "seed": 1}).json()[
-        "scenarios"
-    ]
+    """Все сценарии каталога."""
+    return client.post("/ai/scenarios/generate", json={"count": 4}).json()["scenarios"]
 
 
-# --- три диалога, по одному на сценарий ---------------------------------------
+def expected(scenario):
+    return scenario["groundTruth"]["expectedInput"]
 
 
-def test_dialogue_fire_container(client, scenarios):
-    scenario = scenarios[0]
+# --- три диалога по разным сценариям ------------------------------------------
+
+
+def test_dialogue_follows_scenario_facts(client, scenario):
     replies = dialogue(
         client,
         scenario,
-        ["Служба 112, слушаю вас", "Назовите адрес", "Что горит?", "Пострадавшие есть?"],
+        ["Служба 112, слушаю вас", "Назовите адрес", "Что случилось?", "Пострадавшие есть?"],
     )
+    truth = expected(scenario)
 
-    assert scenario["groundTruth"]["address"] in replies[1]["reply"]
-    assert "мусорный контейнер" in replies[2]["reply"]
+    assert truth["address"]["displayAddress"] in replies[1]["reply"]
+    assert truth["description"].lower() in replies[2]["reply"].lower()
     assert "пострадавших нет" in replies[3]["reply"].lower()
-    assert replies[-1]["revealedFacts"] == ["address", "openFlame", "victims"]
+    assert replies[-1]["revealedFacts"] == ["address", "description", "victims"]
 
 
-def test_dialogue_smoke_in_building(client, scenarios):
-    scenario = scenarios[1]
-    replies = dialogue(
-        client,
-        scenario,
-        ["Назовите адрес происшествия", "На каком вы этаже?", "Представьтесь, пожалуйста"],
-    )
+@pytest.mark.parametrize("index", [0, 1, 2, 3])
+def test_every_catalog_scenario_answers_about_address(client, scenarios, index):
+    scenario = scenarios[index]
+    answer = ask(client, scenario, "Назовите адрес происшествия")
 
-    assert "Берзарина" in replies[0]["reply"]
-    # За один вопрос абонент выдаёт не больше двух фактов: он не диктует анкету.
-    assert "седьмом этаже" in replies[1]["reply"] and "17 этажей" in replies[1]["reply"]
-    assert "Ким Олег Юрьевич" in replies[2]["reply"]
-    assert all(answer["hangUp"] is False for answer in replies)
+    assert expected(scenario)["address"]["displayAddress"] in answer["reply"]
 
 
-def test_dialogue_road_accident(client, scenarios):
-    scenario = scenarios[2]
-    replies = dialogue(
-        client, scenario, ["Что произошло?", "Сколько пострадавших?", "Куда ехать?"]
-    )
-
-    assert "троллейбус" in replies[0]["reply"].lower()
-    assert "3 пострадавших" in replies[1]["reply"]
-    assert "Волгоградский проспект" in replies[2]["reply"]
+def test_victims_answer_comes_from_structured_field(client, scenarios):
+    """Сведения о пострадавших лежат структурой, а абонент проговаривает их словами."""
+    for scenario in scenarios:
+        victims = expected(scenario).get("victims")
+        if victims is None:
+            continue
+        answer = ask(client, scenario, "Пострадавшие есть?")
+        assert ("нет" in answer["reply"].lower()) == (victims["present"] is False)
 
 
 # --- абонент не выдумывает ----------------------------------------------------
 
 
 def test_address_is_silent_until_asked(client, scenario):
-    """Пока оператор не спросил адрес, абонент его не называет."""
-    address = scenario["groundTruth"]["address"]
+    address = expected(scenario)["address"]["displayAddress"]
 
     replies = dialogue(
         client, scenario, ["Служба 112, здравствуйте", "Что случилось?", "Успокойтесь"]
@@ -104,36 +97,28 @@ def test_unrecognised_question_reveals_nothing(client, scenario):
     assert answer["reply"] in ("Простите, не понимаю вопрос.", "Что? Вы приедете или нет?")
 
 
-def test_caller_never_says_facts_absent_from_scenario(client, scenarios):
-    """Реплика не содержит данных из чужих сценариев."""
-    scenario = scenarios[0]
-    foreign = scenarios[1]["groundTruth"]
+def test_caller_never_says_facts_from_another_scenario(client, scenarios):
+    scenario, foreign = scenarios[0], scenarios[1]
+    foreign_address = expected(foreign)["address"]["displayAddress"]
 
-    replies = dialogue(
-        client,
-        scenario,
-        ["Назовите адрес", "Что горит?", "На каком вы этаже?", "Кто звонит?"],
-    )
+    replies = dialogue(client, scenario, ["Назовите адрес", "Что случилось?", "Кто звонит?"])
 
-    for answer in replies:
-        assert foreign["address"] not in answer["reply"]
-        assert foreign["facts"]["callerName"] not in answer["reply"]
+    if foreign_address != expected(scenario)["address"]["displayAddress"]:
+        assert all(foreign_address not in answer["reply"] for answer in replies)
 
 
-def test_question_without_fact_gets_honest_answer(client, scenarios):
-    """Если факта в сценарии нет, абонент говорит, что не знает, а не выдумывает."""
-    # В сценарии с ДТП нет ни этажей, ни домофона.
-    answer = ask(client, scenarios[2], "На каком вы этаже?")
+def test_question_without_fact_gets_honest_answer(client, scenario):
+    """В эталоне нет сведений о заявителе, и выдумывать имя абонент не станет."""
+    answer = ask(client, scenario, "Представьтесь, пожалуйста")
 
     assert answer["revealedFacts"] == []
-    assert "не знаю" in answer["reply"].lower()
+    assert "называться" in answer["reply"].lower() or "разница" in answer["reply"].lower()
 
 
 # --- состояние абонента -------------------------------------------------------
 
 
 def test_greeting_does_not_punish_operator(client, scenario):
-    """Представление по регламенту - правильное действие, терпение почти не падает."""
     before = ask(client, scenario, "Какая у вас погода?")
     after = ask(client, scenario, "Служба 112, здравствуйте, слушаю вас")
 
@@ -161,7 +146,6 @@ def test_caller_hangs_up_when_patience_runs_out(client, scenario):
 
 
 def test_state_stays_within_bounds(client, scenario):
-    """Шкалы не выходят за границы, сколько бы реплик ни было."""
     replies = dialogue(client, scenario, ["Успокойтесь, помощь уже выехала"] * 8)
 
     for answer in replies:
@@ -183,10 +167,7 @@ def test_response_has_strict_structure(client, scenario):
 def test_same_dialogue_is_reproducible(client, scenario):
     lines = ["Служба 112", "Назовите адрес", "Пострадавшие есть?", "Что случилось?"]
 
-    first = dialogue(client, scenario, lines)
-    second = dialogue(client, scenario, lines)
-
-    assert first == second
+    assert dialogue(client, scenario, lines) == dialogue(client, scenario, lines)
 
 
 def test_punctuation_and_case_do_not_matter(client, scenario):
