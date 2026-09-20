@@ -105,6 +105,21 @@ export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
     void loadScenarios();
   }, [loadScenarios]);
 
+  useEffect(() => {
+    if (!session || session.state !== 'ACTIVE') return;
+    let checking = false;
+    const intervalId = window.setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void api.getCurrentSession().then((current) => {
+        if (current?.id === session.id) setSession(current);
+      }).catch(() => {
+        // Keep the visible session and retry; a short network outage must not erase it.
+      }).finally(() => { checking = false; });
+    }, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [api, session?.id, session?.state]);
+
   const visibleScenarios = useMemo(() => (
     scenarios?.filter((scenario) => difficulty === 'ALL' || scenario.difficulty === difficulty) ?? []
   ), [difficulty, scenarios]);
@@ -272,6 +287,12 @@ export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
                   <Divider my="xl" />
                   <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Идентификатор сессии</Text>
                   <Text className="session-id" mt={5}>{session.id}</Text>
+                  {session.report && (
+                    <Alert color={session.report.passed ? 'teal' : 'orange'} mt="xl" title="Результат занятия">
+                      Оценка: {session.report.score} из {session.report.maxScore}.{' '}
+                      {session.report.passed ? 'Задание выполнено.' : 'Нужна доработка.'}
+                    </Alert>
+                  )}
                   {session.state === 'ACTIVE' ? (
                     <Button
                       color="red"
