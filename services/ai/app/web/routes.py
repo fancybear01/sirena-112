@@ -11,7 +11,7 @@
 from fastapi import APIRouter
 
 from app.config import SERVICE_NAME, SERVICE_VERSION, settings
-from app.engines import mock_scenarios, rule_dialogue, rule_scoring
+from app.engines import catalog_scenarios, rule_dialogue, rule_scoring
 from app.schemas.common import CamelModel
 from app.schemas.dialogue import DialogueRequest, DialogueResponse
 from app.schemas.generation import ScenarioGenerateRequest, ScenarioGenerateResponse
@@ -47,7 +47,7 @@ def health() -> HealthResponse:
 )
 def generate_scenarios(request: ScenarioGenerateRequest) -> ScenarioGenerateResponse:
     """Возвращает черновики. Публикацию сценария подтверждает преподаватель в Core."""
-    return mock_scenarios.generate(request)
+    return catalog_scenarios.generate(request)
 
 
 @ai_router.post(

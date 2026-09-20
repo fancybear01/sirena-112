@@ -86,6 +86,16 @@ UNSURE_REPLIES = {
     PANICKED: "Да не знаю я! Приезжайте уже!",
 }
 
+# Своё имя человек знает всегда, поэтому "не знаю" здесь звучало бы нелепо.
+# Если в сценарии нет данных о заявителе, он просто не хочет называться -
+# так бывает и в жизни.
+UNSURE_BY_INTENT = {
+    "CALLER_ID": {
+        CALM: "Не хочу называться, это обязательно?",
+        PANICKED: "Какая разница кто я! Приезжайте!",
+    },
+}
+
 UNKNOWN_REPLIES = {
     CALM: "Простите, не понимаю вопрос.",
     PANICKED: "Что? Вы приедете или нет?",
@@ -131,16 +141,44 @@ def _initial_state(request: DialogueRequest) -> CallerState:
     )
 
 
+def _victims_phrase(victims) -> Optional[str]:
+    """Превращает структурные сведения о пострадавших в человеческую фразу."""
+    if victims is None:
+        return None
+    if not victims.present:
+        return "пострадавших нет"
+
+    parts = ["пострадавшие есть"] if victims.count is None else [
+        "пострадавших {count}".format(count=victims.count)
+    ]
+    if victims.threat_to_people:
+        parts.append("людям угрожает опасность")
+    return ", ".join(parts)
+
+
 def _fact_value(scenario: Scenario, key: str) -> Optional[str]:
-    """Достаёт значение факта из эталона.
+    """Достаёт значение факта из ожидаемого ввода оператора.
 
-    Адрес лежит отдельным полем, а не внутри facts, но для абонента это такой же
-    факт, как остальные.
+    Эталон описывает, что оператор должен был записать в карточку. Ровно это
+    абонент и знает: адрес, обстоятельства, сведения о пострадавших, своё имя.
+    Ничего сверх этого у него нет, поэтому и выдумать он ничего не может.
     """
-    if key == "address":
-        return scenario.ground_truth.address
+    expected = scenario.ground_truth.expected_input
 
-    value: Any = scenario.ground_truth.facts.get(key)
+    if key == "address":
+        return expected.address.display_address if expected.address else None
+    if key == "victims":
+        return _victims_phrase(expected.victims)
+    if key == "description":
+        return expected.description
+    if key == "callerName":
+        return expected.caller.full_name if expected.caller else None
+    if key == "callerPhone":
+        if expected.caller and expected.caller.phone_numbers:
+            return expected.caller.phone_numbers[0].value
+        return None
+
+    value: Any = expected.extra_facts.get(key)
     return None if value is None else str(value)
 
 
@@ -220,7 +258,7 @@ def respond(request: DialogueRequest) -> DialogueResponse:
     elif repeated:
         reply = REPEAT_REPLIES[flavour]
     elif unsure:
-        reply = UNSURE_REPLIES[flavour]
+        reply = UNSURE_BY_INTENT.get(intent, UNSURE_REPLIES)[flavour]
     else:
         reply = UNKNOWN_REPLIES[flavour]
 
