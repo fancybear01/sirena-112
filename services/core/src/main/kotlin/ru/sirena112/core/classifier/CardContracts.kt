@@ -16,8 +16,13 @@ data class OperatorCardInput(
     val victims: VictimsInput? = null,
     val facts: Map<String, Any?> = emptyMap()
 ) {
+    // Вспомогательные предикаты, а не данные карточки: без @JsonIgnore Jackson
+    // отдаёт их как поля empty и notEmpty, и AI отклоняет запрос целиком -
+    // в контракте 0.3 неизвестные поля запрещены.
+    @com.fasterxml.jackson.annotation.JsonIgnore
     fun isEmpty(): Boolean = this == OperatorCardInput()
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     fun isNotEmpty(): Boolean = !isEmpty()
 }
 

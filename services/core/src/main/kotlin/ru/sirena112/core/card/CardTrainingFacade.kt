@@ -86,7 +86,8 @@ class CardTrainingFacade(
     private val sessionRepository: TrainingSessionRepository,
     private val sessionService: TrainingSessionService,
     private val classifierService: ClassifierService,
-    private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService
+    private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService,
+    private val aiClient: ru.sirena112.core.integration.AiClient
 ) {
     private val reports = java.util.concurrent.ConcurrentHashMap<UUID, SessionReport>()
 
@@ -169,7 +170,10 @@ class CardTrainingFacade(
             throw IllegalStateException("Отправка доступна только для активной или завершённой сессии")
         }
         sessionService.startScoring(session.id)
-        val report = score(session)
+        // Оценку считает AI: там рубрика, разбор транскрипта и объяснения.
+        // Если он недоступен, занятие не останавливается - Core отдаёт свой
+        // упрощённый отчёт, а карточка обучающегося уже сохранена.
+        val report = scoreByAi(session) ?: score(session)
         reports[session.id] = report
         sessionService.completeScoring(session.id)
         return report
@@ -222,9 +226,56 @@ class CardTrainingFacade(
         }
     }
 
+    /** Просит AI разобрать занятие и переводит его отчёт в модель Core. */
+    private fun scoreByAi(session: TrainingSession): SessionReport? {
+        val card = session.operatorCard
+        val command = ru.sirena112.core.integration.AiScoreCommand(
+            sessionId = session.id.toString(),
+            scenario = session.scenario,
+            submittedCard = card.input,
+            calculation = card.calculation,
+            elapsedSeconds = elapsedSeconds(session)
+        )
+
+        val report = aiClient.score(command) ?: return null
+
+        // Штрафы AI переносим в ошибки: в модели Core отдельного места для них
+        // нет, а терять объяснение снятых баллов нельзя.
+        val errors = report.errors.map { ScoreError(it.code, it.message, it.field) } +
+            report.penalties.map { ScoreError(it.code, it.message, null) }
+
+        return SessionReport(
+            sessionId = session.id,
+            score = report.totalScore,
+            maxScore = report.maxScore,
+            passed = report.passed,
+            criteria = report.criteria.map { criterion ->
+                CriterionScore(
+                    code = criterion.code,
+                    passed = criterion.status == "PASSED",
+                    points = criterion.earnedPoints,
+                    maxPoints = criterion.maxPoints,
+                    message = criterion.description
+                )
+            },
+            errors = errors,
+            recommendations = report.recommendations,
+            classifierVersion = report.classifierVersion ?: session.scenario.groundTruth.classifierVersion,
+            classifierCode = session.scenario.groundTruth.classifierCode
+        )
+    }
+
+    /** Сколько заняло занятие: нужно AI для проверки норматива времени. */
+    private fun elapsedSeconds(session: TrainingSession): Long? {
+        val startedAt = session.startedAt ?: return null
+        val endedAt = session.endedAt ?: java.time.Instant.now()
+        return java.time.Duration.between(startedAt, endedAt).seconds.coerceAtLeast(0)
+    }
+
     /**
-     * Оценка по эталону каталога: признаки через вычисленный код, службы через
-     * совпадение маршрутизации, ответы и адрес - по исходным данным оператора.
+     * Запасная оценка Core на случай недоступного AI: признаки через
+     * вычисленный код, службы через совпадение маршрутизации, ответы и адрес -
+     * по исходным данным оператора.
      */
     private fun score(session: TrainingSession): SessionReport {
         val card = session.operatorCard
