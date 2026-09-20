@@ -19,7 +19,8 @@ from typing import Dict, List, Optional
 from app.config import SERVICE_VERSION
 from app.schemas.common import ResponseMeta
 from app.schemas.generation import ScenarioGenerateRequest, ScenarioGenerateResponse
-from app.schemas.scenario import Caller, Category, Rubric, RubricCriterion, Scenario
+from app.engines.rubric import ensure_rubric
+from app.schemas.scenario import Caller, Category, Scenario
 
 DEFAULT_SCENARIOS = "contracts/examples"
 
@@ -49,53 +50,6 @@ PERSONA_BY_CATEGORY: Dict[Category, Dict] = {
     },
 }
 
-# Рубрика - это методика обучения, а не данные классификатора: в каталоге
-# её нет и быть не может. Импорт кладёт в сценарий заглушку, поэтому сервис
-# подставляет свой набор критериев. Если сценарий придёт с собственной
-# рубрикой из Core, оценка будет считаться по ней.
-BASE_RUBRIC = [
-    {"code": "GREETING", "description": "Представился и назвал службу", "weight": 1.0},
-    {
-        "code": "SIGNS",
-        "description": "Выбрал полный путь признаков происшествия",
-        "weight": 3.0,
-        "critical": True,
-    },
-    {
-        "code": "QUESTIONS",
-        "description": "Уточнил обязательные вопросы опросной карты",
-        "weight": 2.0,
-        "critical": True,
-    },
-    {
-        "code": "ADDRESS",
-        "description": "Собрал адрес происшествия",
-        "weight": 3.0,
-        "critical": True,
-    },
-    {
-        "code": "VICTIMS",
-        "description": "Зафиксировал пострадавших и угрозу людям",
-        "weight": 2.0,
-        "critical": True,
-    },
-    {
-        "code": "DESCRIPTION",
-        "description": "Описал существенные обстоятельства",
-        "weight": 1.0,
-    },
-    {
-        "code": "CLASSIFICATION",
-        "description": "По карточке определилось верное происшествие",
-        "weight": 2.0,
-    },
-    {
-        "code": "SERVICES",
-        "description": "Состав оповещённых служб совпал с эталоном",
-        "weight": 2.0,
-    },
-]
-
 DEFAULT_PERSONA = {
     "persona": "Заявитель, говорит по делу, но нервничает",
     "panic": 0.5,
@@ -122,11 +76,11 @@ def _prepare(scenario: Scenario) -> Scenario:
     Каталог описывает происшествие, но ничего не знает ни про характер
     звонящего, ни про то, как занятие оценивается. И то и другое - наша часть.
     """
-    updates = {"rubric": Rubric(criteria=[RubricCriterion(**c) for c in BASE_RUBRIC])}
-    if scenario.caller is None:
-        profile = PERSONA_BY_CATEGORY.get(scenario.category, DEFAULT_PERSONA)
-        updates["caller"] = Caller(**profile)
-    return scenario.model_copy(update=updates)
+    prepared = ensure_rubric(scenario)
+    if prepared.caller is not None:
+        return prepared
+    profile = PERSONA_BY_CATEGORY.get(prepared.category, DEFAULT_PERSONA)
+    return prepared.model_copy(update={"caller": Caller(**profile)})
 
 
 def load_scenarios(directory: Optional[Path] = None) -> List[Scenario]:

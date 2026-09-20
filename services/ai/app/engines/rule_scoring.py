@@ -23,6 +23,7 @@ from app.catalog import load_catalog
 from app.config import SERVICE_VERSION
 from app.engines.address_match import compare as compare_address
 from app.engines.question_intents import match_tone
+from app.engines.rubric import ensure_rubric
 from app.schemas.common import ResponseMeta
 from app.schemas.dialogue import SpeakerRole
 from app.schemas.scenario import RubricCriterion, ResponseScenarioStatus
@@ -473,8 +474,13 @@ def _penalties(request: ScoreRequest) -> List[Penalty]:
 
 
 def score(request: ScoreRequest) -> ScoreResponse:
-    """Считает объяснимый отчёт по рубрике сценария."""
-    criteria = request.scenario.rubric.criteria
+    """Считает объяснимый отчёт по рубрике сценария.
+
+    Сценарий может прийти от Core с рубрикой-заглушкой из импорта. В этом
+    случае берётся минимальный набор критериев: иначе отчёт будет формально
+    верным, но разбирать в нём нечего.
+    """
+    criteria = ensure_rubric(request.scenario).rubric.criteria
 
     # Сначала проверяем всё, и только потом делим баллы: до проверки неизвестно,
     # какие критерии вообще применимы к этому занятию.
