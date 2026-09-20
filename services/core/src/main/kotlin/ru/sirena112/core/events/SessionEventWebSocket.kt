@@ -29,12 +29,33 @@ class SessionEventWebSocketHandler(
             session.close(CloseStatus.BAD_DATA)
             return
         }
-        val listener: (SessionEvent) -> Unit = { event -> send(session, event) }
+        // Subscribe before reading history so no event can fall into the gap.
+        // Buffer live events until replay finishes; both paths share one send lock.
+        // Never hold this lock while reading the repository (publish holds its own lock).
+        val sendLock = Any()
+        val pending = mutableListOf<SessionEvent>()
+        var replaying = true
+        val listener: (SessionEvent) -> Unit = { event ->
+            synchronized(sendLock) {
+                if (replaying) pending += event else send(session, event)
+            }
+        }
         val unsubscribe = subscriptions.subscribe(sessionId, listener)
         connectionSubscriptions[session.id] = unsubscribe
 
-        // Replay the current history so a page opened after session creation is consistent.
-        events.findBySessionId(sessionId).forEach { send(session, it) }
+        try {
+            val history = events.findBySessionId(sessionId)
+            synchronized(sendLock) {
+                history.forEach { send(session, it) }
+                val replayedIds = history.mapTo(mutableSetOf()) { it.eventId }
+                pending.filterNot { it.eventId in replayedIds }.forEach { send(session, it) }
+                pending.clear()
+                replaying = false
+            }
+        } catch (exception: Exception) {
+            handleTransportError(session, exception)
+        }
+        if (!session.isOpen) connectionSubscriptions.remove(session.id)?.invoke()
     }
 
     override fun afterConnectionClosed(session: WebSocketSession, closeStatus: CloseStatus) {

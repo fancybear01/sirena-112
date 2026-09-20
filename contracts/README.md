@@ -39,6 +39,20 @@ examples/scenario-1050602.json — проверяемый сценарий дл�
 - основную службу МЧС.
 
 Файл валидируется тестом services/ai/tests/test_contract_examples.py.
+
+## Проверка контрактов
+
+Из корня репозитория установите dev-зависимости AI и запустите общий валидатор:
+
+```bash
+python -m pip install -e "./services/ai[dev]"
+python tools/validate_contracts.py
+```
+
+Проверка валидирует `openapi.yaml`, обе JSON Schema, весь каталог
+классификатора и все `examples/scenario-*.json`. Эта же команда выполняется
+обязательной GitHub Actions-проверкой `contracts / validate`.
+
 ## Каталог классификатора
 
 `classifier.schema.json` описывает исходный нормализованный каталог отдельно от
