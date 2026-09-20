@@ -37,6 +37,25 @@
 
 Правила веток и Pull Request описаны в [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+## Обязательные проверки Pull Request
+
+Перед merge каждый Pull Request должен пройти один и тот же полный набор
+проверок; фильтры по путям намеренно не используются, чтобы изменение любого
+сервиса не могло пропустить регрессию общего контракта:
+
+- `branch-name / validate` — формат имени ветки;
+- `core / test` — unit- и integration-тесты Kotlin Core на Java 17;
+- `ai / test` — Python-тесты с dev-зависимостями;
+- `web / test-build` — typecheck, тесты и production build Web;
+- `media / test-build` — тесты, `go vet`, бинарник, Dockerfile Media,
+  `docker compose config` и сборка Asterisk без публикации образов;
+- `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев.
+
+Все перечисленные check names должны быть добавлены как required status checks
+в правила защиты ветки `main`. Workflow запускаются для Pull Request и push в
+`main`, используют кэши только для зависимостей и отменяют устаревший запуск для
+той же ветки.
+
 ## Локальная инфраструктура
 
 Скопируйте `.env.example` в `.env`, замените тестовые секреты и запустите:
