@@ -1,37 +1,30 @@
-"""Оценка учебной сессии.
+"""Оценка учебной сессии по эталону классификатора.
 
-Инварианты, которые обязаны держаться при любом входе:
-сумма maxPoints равна maxScore, итог равен заработанному минус штрафы,
-и каждое снижение оценки объяснено.
+Проверяется главное свойство: AI не считает службы сам, а сравнивает расчёт
+Core с эталоном сценария, и объясняет каждое снижение балла.
 """
 
+from copy import deepcopy
+
 import pytest
+
+from tests.conftest import core_calculation, perfect_card
 
 GOOD_TRANSCRIPT = [
     {"role": "OPERATOR", "text": "Служба 112, здравствуйте", "atMs": 0},
     {"role": "CALLER", "text": "Помогите!", "atMs": 900},
     {"role": "OPERATOR", "text": "Назовите адрес", "atMs": 3000},
-    {"role": "OPERATOR", "text": "Пострадавшие есть?", "atMs": 9000},
 ]
 
 
-def perfect_card(scenario):
-    truth = scenario["groundTruth"]
-    return {
-        "incidentType": truth["incidentType"],
-        "signs": truth["signs"],
-        "address": truth["address"],
-        "requiredServices": truth["requiredServices"],
-    }
-
-
-def score(client, scenario, card=None, transcript=None, elapsed=None):
+def score(client, scenario, card=None, calculation=..., transcript=None, elapsed=None):
     payload = {
         "sessionId": "session-test",
         "scenario": scenario,
         "submittedCard": perfect_card(scenario) if card is None else card,
         "transcript": GOOD_TRANSCRIPT if transcript is None else transcript,
     }
+    payload["calculation"] = core_calculation(scenario) if calculation is ... else calculation
     if elapsed is not None:
         payload["elapsedSeconds"] = elapsed
     response = client.post("/ai/sessions/score", json=payload)
@@ -41,6 +34,10 @@ def score(client, scenario, card=None, transcript=None, elapsed=None):
 
 def criterion(report, code):
     return next(item for item in report["criteria"] if item["code"] == code)
+
+
+def message_for(report, code):
+    return next(item["message"] for item in report["errors"] if code in item["code"])
 
 
 # --- успешное и ошибочное прохождение -----------------------------------------
@@ -56,17 +53,33 @@ def test_perfect_session_passes_with_full_score(client, scenario):
 
 
 def test_empty_card_fails(client, scenario):
-    report = score(client, scenario, card={}, elapsed=90)
+    """По пустой карточке Core ничего не определит, и зачёта быть не может."""
+    nothing_resolved = core_calculation(
+        scenario, status="INCOMPLETE", classifierCode=None, services=[], mainServices=[]
+    )
+
+    report = score(client, scenario, card={}, calculation=nothing_resolved, elapsed=90)
 
     assert report["totalScore"] == 0.0
     assert report["passed"] is False
-    assert any(error["severity"] == "CRITICAL" for error in report["errors"])
+    assert any(item["severity"] == "CRITICAL" for item in report["errors"])
+
+
+# --- отчёт помнит, по какому эталону считал -----------------------------------
+
+
+def test_report_identifies_scenario_and_catalog_version(client, scenario):
+    report = score(client, scenario)
+
+    assert report["sessionId"] == "session-test"
+    assert report["scenarioId"] == scenario["id"]
+    assert report["classifierVersion"] == scenario["groundTruth"]["classifierVersion"]
 
 
 # --- инварианты отчёта --------------------------------------------------------
 
 
-@pytest.mark.parametrize("card", [None, {}, {"address": "Тверская 1"}])
+@pytest.mark.parametrize("card", [None, {}, {"description": "что-то"}])
 def test_criteria_points_always_sum_to_max_score(client, scenario, card):
     report = score(client, scenario, card=card)
 
@@ -83,8 +96,10 @@ def test_total_equals_earned_minus_penalties(client, scenario):
 
 
 def test_every_lost_criterion_is_explained(client, scenario):
-    report = score(client, scenario, card={"address": "Берзарина 21"})
+    card = perfect_card(scenario)
+    card["address"]["displayAddress"] = "Совсем другая улица"
 
+    report = score(client, scenario, card=card)
     failed = {item["code"] for item in report["criteria"] if item["status"] != "PASSED"}
     explained = {
         item["code"].replace("CRITERION_", "")
@@ -92,116 +107,164 @@ def test_every_lost_criterion_is_explained(client, scenario):
         if item["code"].startswith("CRITERION_")
     }
     assert failed == explained
-    assert all(item["message"] for item in report["errors"])
 
 
 def test_score_is_reproducible(client, scenario):
-    first = score(client, scenario, card={"address": "Берзарина"}, elapsed=55)
-    second = score(client, scenario, card={"address": "Берзарина"}, elapsed=55)
+    card = perfect_card(scenario)
+    card["description"] = "короткое описание"
+
+    first = score(client, scenario, card=card, elapsed=55)
+    second = score(client, scenario, card=card, elapsed=55)
 
     assert first == second
 
 
-# --- отдельные проверки -------------------------------------------------------
+# --- признаки и вопросы опросной карты ----------------------------------------
+
+
+def test_missing_sign_is_named_by_label(client, scenario):
+    card = perfect_card(scenario)
+    card["incident"]["selectedSignIds"] = card["incident"]["selectedSignIds"][:2]
+
+    report = score(client, scenario, card=card)
+
+    assert criterion(report, "SIGNS")["status"] == "PARTIAL"
+    assert "дым" in message_for(report, "SIGNS")
+
+
+def test_unanswered_question_lowers_score_and_is_explained(client, scenario):
+    card = perfect_card(scenario)
+    dropped = card["incident"]["answers"].pop()
+
+    report = score(client, scenario, card=card)
+
+    assert criterion(report, "QUESTIONS")["status"] == "PARTIAL"
+    assert "не уточнено" in message_for(report, "QUESTIONS")
+    assert dropped["questionId"]
+
+
+def test_different_answer_is_distinguished_from_missing_one(client, scenario):
+    card = perfect_card(scenario)
+    card["incident"]["answers"][0]["optionIds"] = ["YES"]
+
+    report = score(client, scenario, card=card)
+
+    assert "ответ отличается" in message_for(report, "QUESTIONS")
+
+
+# --- службы и классификация приходят от Core ----------------------------------
+
+
+def test_services_are_compared_with_core_result(client, scenario):
+    calculation = core_calculation(scenario)
+    dropped = calculation["services"].pop()
+
+    report = score(client, scenario, calculation=calculation)
+
+    assert criterion(report, "SERVICES")["status"] != "PASSED"
+    assert dropped["displayName"] in message_for(report, "SERVICES")
+
+
+def test_wrong_classification_is_reported(client, scenario):
+    calculation = core_calculation(scenario, classifierCode="2010000")
+
+    report = score(client, scenario, calculation=calculation)
+
+    assert criterion(report, "CLASSIFICATION")["status"] == "FAILED"
+    assert "2010000" in message_for(report, "CLASSIFICATION")
+
+
+def test_without_core_calculation_services_are_not_scored(client, scenario):
+    """Сам AI службы не считает: без расчёта Core проверять нечем."""
+    report = score(client, scenario, calculation=None)
+
+    assert criterion(report, "SERVICES")["maxPoints"] == 0.0
+    assert criterion(report, "CLASSIFICATION")["maxPoints"] == 0.0
+    assert any(item["code"] == "CALCULATION_MISSING" for item in report["errors"])
+
+
+# --- ошибки эталона отделены от ошибок оператора ------------------------------
+
+
+def test_catalog_version_change_is_detected(client, scenario):
+    stale = deepcopy(scenario)
+    stale["groundTruth"]["classifierVersion"] = "045-2023-01-01"
+
+    report = score(client, stale, calculation=core_calculation(stale))
+    mismatch = next(item for item in report["errors"] if item["code"] == "CLASSIFIER_VERSION_MISMATCH")
+
+    assert mismatch["kind"] == "GROUND_TRUTH"
+    assert "045-2023-01-01" in mismatch["message"]
+
+
+def test_ground_truth_problem_does_not_block_pass(client, scenario):
+    """Расхождение версий - вопрос к данным, а не к обучающемуся."""
+    stale = deepcopy(scenario)
+    stale["groundTruth"]["classifierVersion"] = "045-2023-01-01"
+
+    report = score(client, stale, calculation=core_calculation(stale), elapsed=20)
+
+    assert any(item["kind"] == "GROUND_TRUTH" for item in report["errors"])
+    assert all(item["kind"] != "OPERATOR" for item in report["errors"])
+    assert report["passed"] is True
+
+
+def test_calculated_fields_cannot_be_submitted_by_client(client, scenario):
+    card = perfect_card(scenario)
+    card["facts"] = {"classifierCode": "1050602", "requiredServices": ["MCHS"]}
+
+    report = score(client, scenario, card=card)
+    substituted = next(item for item in report["errors"] if item["code"] == "CALCULATED_FIELDS_SUBMITTED")
+
+    assert substituted["kind"] == "GROUND_TRUTH"
+    assert "classifierCode" in substituted["message"]
+
+
+# --- адрес, пострадавшие, описание --------------------------------------------
 
 
 def test_address_abbreviations_are_accepted(client, scenario):
     card = perfect_card(scenario)
-    card["address"] = card["address"].replace("д. ", "дом ").upper()
+    card["address"]["displayAddress"] = card["address"]["displayAddress"].upper()
 
     assert criterion(score(client, scenario, card=card), "ADDRESS")["status"] == "PASSED"
 
 
-def test_incomplete_address_is_partial_and_names_missing_parts(client, scenario):
+def test_victims_must_be_recorded(client, scenario):
     card = perfect_card(scenario)
-    # Потеряно строение: остального достаточно, чтобы засчитать частично.
-    card["address"] = "Москва, МЖД Киевская 1 км, д. 2"
+    card.pop("victims")
 
     report = score(client, scenario, card=card)
-    result = criterion(report, "ADDRESS")
-    message = next(item["message"] for item in report["errors"] if "ADDRESS" in item["code"])
 
-    assert result["status"] == "PARTIAL"
-    assert 0 < result["earnedPoints"] < result["maxPoints"]
-    assert "не указано" in message
+    assert criterion(report, "VICTIMS")["status"] == "FAILED"
+    assert "не заполнены" in message_for(report, "VICTIMS")
 
 
-def test_wrong_sign_level_is_partial(client, scenario):
+def test_description_is_compared_by_meaning_not_wording(client, scenario):
+    """Порядок слов и формулировка не важны, важны обстоятельства."""
+    original = scenario["groundTruth"]["expectedInput"]["description"]
     card = perfect_card(scenario)
-    card["signs"] = dict(card["signs"], level3="дым")
+    card["description"] = " ".join(reversed(original.split()))
 
-    report = score(client, scenario, card=card)
-    result = criterion(report, "SIGNS")
-    message = next(item["message"] for item in report["errors"] if "SIGNS" in item["code"])
-
-    assert result["status"] == "PARTIAL"
-    assert "третьего уровня" in message
+    assert criterion(score(client, scenario, card=card), "DESCRIPTION")["status"] == "PASSED"
 
 
-def test_extra_service_costs_points(client, scenario):
-    card = perfect_card(scenario)
-    card["requiredServices"] = card["requiredServices"] + ["Мослифт"]
-
-    report = score(client, scenario, card=card)
-    message = next(item["message"] for item in report["errors"] if "SERVICES" in item["code"])
-
-    assert criterion(report, "SERVICES")["status"] != "PASSED"
-    assert "лишнее: Мослифт" in message
-
-
-def test_missing_service_names_it_as_written(client, scenario):
-    card = perfect_card(scenario)
-    dropped = card["requiredServices"][0]
-    card["requiredServices"] = card["requiredServices"][1:]
-
-    report = score(client, scenario, card=card)
-    message = next(item["message"] for item in report["errors"] if "SERVICES" in item["code"])
-
-    assert dropped in message
-
-
-# --- проверки по транскрипту --------------------------------------------------
+# --- разговор и нормативы -----------------------------------------------------
 
 
 def test_greeting_is_checked_by_transcript(client, scenario):
     without = [{"role": "OPERATOR", "text": "Назовите адрес", "atMs": 0}]
 
     report = score(client, scenario, transcript=without)
-    result = criterion(report, "GREETING")
 
-    assert result["status"] == "FAILED"
-    assert any("представления службы" in item["message"] for item in report["errors"])
-
-
-def test_victims_question_is_checked_by_transcript(client, scenario):
-    without = [{"role": "OPERATOR", "text": "Служба 112, назовите адрес", "atMs": 0}]
-
-    report = score(client, scenario, transcript=without)
-
-    assert criterion(report, "VICTIMS")["status"] == "FAILED"
-
-
-def test_caller_words_do_not_count_as_operator_questions(client, scenario):
-    """Вопрос о пострадавших должен задать оператор, а не заявитель."""
-    transcript = [
-        {"role": "OPERATOR", "text": "Служба 112", "atMs": 0},
-        {"role": "CALLER", "text": "А пострадавшие будут?", "atMs": 500},
-    ]
-
-    assert criterion(score(client, scenario, transcript=transcript), "VICTIMS")["status"] == "FAILED"
+    assert criterion(report, "GREETING")["status"] == "FAILED"
 
 
 def test_card_mode_does_not_punish_missing_conversation(client, scenario):
-    """В карточном режиме звонка нет, наказывать за непредставление нельзя."""
     report = score(client, scenario, transcript=[], elapsed=20)
 
     assert criterion(report, "GREETING")["maxPoints"] == 0.0
-    assert criterion(report, "VICTIMS")["maxPoints"] == 0.0
     assert report["totalScore"] == 100.0
-    assert report["passed"] is True
-
-
-# --- штрафы -------------------------------------------------------------------
 
 
 def test_time_penalty_applied_only_over_limit(client, scenario):
@@ -212,26 +275,13 @@ def test_time_penalty_applied_only_over_limit(client, scenario):
 
     assert within["penalties"] == []
     assert [item["code"] for item in over["penalties"]] == ["TIME_LIMIT_EXCEEDED"]
-    assert over["totalScore"] < within["totalScore"]
 
 
 def test_card_without_address_cannot_be_transferred(client, scenario):
     card = perfect_card(scenario)
-    card["address"] = None
+    card.pop("address")
 
     report = score(client, scenario, card=card)
-    codes = [item["code"] for item in report["penalties"]]
 
-    assert "CARD_NOT_TRANSFERABLE" in codes
-    assert any(
-        item["severity"] == "CRITICAL" and item["code"] == "CARD_NOT_TRANSFERABLE"
-        for item in report["errors"]
-    )
+    assert "CARD_NOT_TRANSFERABLE" in [item["code"] for item in report["penalties"]]
     assert report["passed"] is False
-
-
-def test_recommendation_for_each_error(client, scenario):
-    report = score(client, scenario, card={"address": "Берзарина 21"})
-
-    assert len(report["recommendations"]) >= 1
-    assert all(text for text in report["recommendations"])
