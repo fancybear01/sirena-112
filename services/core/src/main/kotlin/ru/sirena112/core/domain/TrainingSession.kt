@@ -96,18 +96,22 @@ class TrainingSession(
 
     fun onCallAnswered(): TrainingSession {
         requireMode(SessionMode.VOICE, "Ответ на звонок доступен только в голосовом режиме")
-        return transition(SessionState.ACTIVE)
+        transition(SessionState.ACTIVE)
+        startedAt = startedAt ?: Instant.now()
+        return this
     }
 
     fun startCard(): TrainingSession {
         requireMode(SessionMode.CARD, "Карточный старт доступен только в карточном режиме")
+        transition(SessionState.ACTIVE)
         startedAt = startedAt ?: Instant.now()
-        return transition(SessionState.ACTIVE)
+        return this
     }
 
     fun complete(): TrainingSession {
+        transition(SessionState.COMPLETED)
         endedAt = endedAt ?: Instant.now()
-        return transition(SessionState.COMPLETED)
+        return this
     }
 
     fun startScoring(): TrainingSession = transition(SessionState.SCORING)
@@ -120,6 +124,7 @@ class TrainingSession(
         }
         state = SessionState.FAILED
         failureReason = reason?.takeIf { it.isNotBlank() }
+        endedAt = endedAt ?: Instant.now()
         touch()
         return this
     }
@@ -186,6 +191,7 @@ class TrainingSession(
         )
 
         private val FAILURE_SOURCES = setOf(
+            SessionState.READY,
             SessionState.RINGING,
             SessionState.ACTIVE,
             SessionState.COMPLETED,

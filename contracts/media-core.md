@@ -1,13 +1,13 @@
 # Контракт Core ↔ Media
 
-Версия MVP для задач #10–#12. AI voice stream описан в `media-ai.md` и в этом
-срезе **не реализуется** (вместо него RTP echo).
+Команды реализованы Go Media в задачах #10–#12; приём событий Core добавлен
+в #54. RTP ↔ AI bridge зависит от #53 (до его интеграции остаётся echo).
 
 ## Роли
 
 | Компонент | Ответственность |
 |-----------|-----------------|
-| Kotlin Core | бизнес-сессия, создаёт `aiSessionId`, шлёт команды Media |
+| Kotlin Core | бизнес-сессия, запрашивает `aiSessionId` у AI, шлёт команды Media, принимает события |
 | Go Media | ARI/SIP/RTP, technical call state, публикация media-событий |
 | Asterisk | телефония |
 | Python AI | STT/TTS/диалог (после MVP) |
@@ -17,7 +17,7 @@ Media **не** ходит в PostgreSQL и не считает score.
 ## Transport
 
 - Core → Media: HTTP JSON, base URL `CORE_MEDIA_BASE_URL` (по умолчанию `http://127.0.0.1:8091`)
-- Media → Core: port `CoreEventPublisher`; в MVP — structured log stub. Реальный HTTP ingest подключается, когда Core его отдаст.
+- Media → Core: `POST /internal/v1/media/events`, JSON-конверт из `events.md`; Core отвечает `{eventId,accepted,sessionState}`. Публикация по сети со стороны Media — отдельная интеграция.
 - Correlation: заголовок `X-Request-Id` (опционально) + `sessionId` / `callId` в теле и событиях.
 
 ## Команды Core → Media
@@ -112,7 +112,13 @@ MVP stub → `501 not_implemented` (до AI stream).
 | `media.latency` | зарезервировано (опционально) |
 | `system.error` | зарезервировано |
 
-Идемпотентность на стороне Core — по `eventId`.
+Идемпотентность на стороне Core — по `eventId`. Повтор идентичного конверта
+возвращает `accepted=false`; чужой `callId`/`aiSessionId` или повтор `eventId`
+с другим содержимым отклоняется. `call.answered` запускает бизнес-сессию,
+`call.ended` завершает её или переводит в `FAILED`, если ответа не было.
+Опоздавшие события сохраняются, но не возвращают терминальное состояние назад.
+Тот же конверт доступен преподавателю через `GET /api/teacher/sessions/{id}/events`
+и по существующему WebSocket `/ws/sessions/{id}/events`.
 
 ## Technical call states (Media)
 
@@ -161,6 +167,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 
 - нет AI WebSocket (контракт уже в `media-ai.md`);
 - число одновременных звонков ограничено диапазоном `RTP_PORT`–`RTP_PORT_END`;
-- Core event publisher = log stub;
+- Пока Media публикует события только в log stub: для сквозного звонка нужно
+  подключить его publisher к `POST /internal/v1/media/events` (#53 / смежная интеграция);
 - нет SRTP/Opus;
 - ARI HTTP на хосте только `127.0.0.1`.

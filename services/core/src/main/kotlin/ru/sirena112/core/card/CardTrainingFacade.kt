@@ -28,7 +28,7 @@ import java.time.Duration
 import java.util.UUID
 
 /** Контракт 0.3: клиент отправляет только исходные данные оператора. */
-data class CreateCardSessionRequest(val scenarioId: UUID? = null)
+data class CreateCardSessionRequest(val scenarioId: UUID? = null, val mode: SessionMode = SessionMode.CARD)
 
 data class SaveCardRequest(
     val input: OperatorCardInput,
@@ -95,6 +95,7 @@ class CardTrainingFacade(
 
     fun assignments(): List<StudentAssignmentResponse> = sessionRepository.findAll()
         .asSequence()
+        .filter { it.mode == SessionMode.CARD }
         .filter { it.state in setOf(SessionState.ACTIVE, SessionState.SCORING, SessionState.SCORED) }
         .sortedWith(compareByDescending<TrainingSession> { it.state == SessionState.ACTIVE }
             .thenByDescending { it.startedAt ?: it.createdAt })
@@ -107,29 +108,30 @@ class CardTrainingFacade(
         .toList()
 
     fun cardForm(sessionId: UUID): CardFormDefinition {
-        val session = requireSession(sessionId)
+        val session = requireCardSession(sessionId)
         return classifierService.buildForm(session.operatorCard.input)
     }
 
     fun createSession(request: CreateCardSessionRequest): SessionView {
         val scenario = scenarioRepository.findById(request.scenarioId ?: DEFAULT_SCENARIO_ID)
             ?: throw NoSuchElementException("Сценарий ${request.scenarioId} не найден")
-        return sessionService.create(scenario, SessionMode.CARD).toView()
+        return sessionService.create(scenario, request.mode).toView()
     }
 
     fun start(sessionId: UUID): SessionView {
         val session = requireSession(sessionId)
+        if (session.mode != SessionMode.CARD) throw IllegalStateException("Голосовая сессия запускается через /call/start")
         sessionService.markReady(session.id)
         return sessionService.startCard(session.id).toView()
     }
 
-    fun stop(sessionId: UUID): SessionView = sessionService.complete(sessionId).toView()
+    fun stop(sessionId: UUID): SessionView = sessionService.complete(requireCardSession(sessionId).id).toView()
 
     fun get(sessionId: UUID): SessionView = requireSession(sessionId).toView()
 
     /** Сохранение черновика: черновик можно сохранять до полного заполнения. */
     fun saveCard(sessionId: UUID, request: SaveCardRequest): SessionView {
-        val session = requireSession(sessionId)
+        val session = requireCardSession(sessionId)
         if (request.input.isEmpty()) {
             throw IllegalArgumentException("Карточка должна содержать хотя бы одно заполненное поле")
         }
@@ -154,7 +156,7 @@ class CardTrainingFacade(
 
     /** Отправка на оценку: обязательные поля должны быть заполнены, тип вычислен. */
     fun submit(sessionId: UUID, request: SubmitCardRequest): SessionReport {
-        var session = requireSession(sessionId)
+        var session = requireCardSession(sessionId)
         if (request.input.isNotEmpty() && request.input != session.operatorCard.input) {
             saveCard(sessionId, SaveCardRequest(request.input, request.expectedRevision))
             session = requireSession(sessionId)
@@ -327,6 +329,10 @@ class CardTrainingFacade(
 
     private fun requireSession(sessionId: UUID): TrainingSession = sessionRepository.findById(sessionId)
         ?: throw NoSuchElementException("Учебная сессия $sessionId не найдена")
+
+    private fun requireCardSession(sessionId: UUID): TrainingSession = requireSession(sessionId).also {
+        if (it.mode != SessionMode.CARD) throw IllegalStateException("Карточная операция недоступна для голосовой сессии")
+    }
 
     private fun TrainingSession.toView(): SessionView = SessionView(
         id = id,

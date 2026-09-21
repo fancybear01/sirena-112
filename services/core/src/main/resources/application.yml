@@ -23,6 +23,7 @@ core:
   version: ${CORE_VERSION:dev}
   ai-base-url: ${CORE_AI_BASE_URL:http://localhost:8090}
   media-base-url: ${CORE_MEDIA_BASE_URL:http://localhost:8091}
+  media-mode: ${CORE_MEDIA_MODE:http}
   service-assignments:
     deadline-seconds: ${CORE_SERVICE_ASSIGNMENT_DEADLINE_SECONDS:3600}
     mock-updates-enabled: ${CORE_SERVICE_ASSIGNMENT_MOCK_UPDATES_ENABLED:false}

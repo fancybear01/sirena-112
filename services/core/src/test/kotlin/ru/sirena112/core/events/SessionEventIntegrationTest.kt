@@ -75,16 +75,16 @@ class SessionEventIntegrationTest {
     @Test
     fun `mock clients do not require external services`() {
         val sessionId = UUID.randomUUID()
-        val scenarioId = UUID.randomUUID()
+        val scenario = facade.scenarios().first()
         val ai = ru.sirena112.core.integration.MockAiClient()
         val media = ru.sirena112.core.integration.MockMediaClient()
-        val aiSession = ai.createSession(sessionId, scenarioId)
+        val aiSession = ai.createSession(sessionId, scenario)
         val call = media.startCall(
             ru.sirena112.core.integration.MediaCallCommand(sessionId, aiSession.aiSessionId, "sip:test")
         )
 
         assertTrue(aiSession.aiSessionId.startsWith("mock-ai-"))
-        assertTrue(call.started)
-        assertEquals(false, media.hangup(sessionId).started)
+        assertEquals("RINGING", call.state)
+        assertEquals("ENDED", media.hangup(call.callId, sessionId).state)
     }
 }

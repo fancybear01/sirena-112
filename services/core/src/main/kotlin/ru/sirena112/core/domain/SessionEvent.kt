@@ -10,6 +10,8 @@ enum class SessionEventType(val value: String) {
     CALL_RINGING("call.ringing"),
     CALL_ANSWERED("call.answered"),
     CALL_ENDED("call.ended"),
+    MEDIA_ERROR("media.error"),
+    MEDIA_LATENCY("media.latency"),
     TRANSCRIPT_PARTIAL("transcript.partial"),
     TRANSCRIPT_FINAL("transcript.final"),
     OPERATOR_SPEECH_STARTED("operator.speech_started"),

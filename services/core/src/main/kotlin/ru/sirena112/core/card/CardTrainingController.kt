@@ -23,6 +23,9 @@ class TeacherCardController(private val facade: CardTrainingFacade) {
     fun createSession(@RequestBody(required = false) request: CreateCardSessionRequest?): SessionView =
         facade.createSession(request ?: CreateCardSessionRequest())
 
+    @GetMapping("/sessions/{sessionId}")
+    fun get(@PathVariable sessionId: UUID): SessionView = facade.get(sessionId)
+
     @PostMapping("/sessions/{sessionId}/start")
     fun start(@PathVariable sessionId: UUID): SessionView = facade.start(sessionId)
 

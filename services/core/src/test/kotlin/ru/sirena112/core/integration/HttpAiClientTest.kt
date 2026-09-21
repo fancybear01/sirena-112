@@ -136,11 +136,19 @@ class HttpAiClientTest {
     @Test
     fun `идентификатор AI-сессии устойчив`() {
         val sessionId = UUID.randomUUID()
+        val scenario = scenario()
+        server.expect(requestTo("http://ai.test/ai/voice/sessions"))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(withSuccess(
+                """{"aiSessionId":"voice-test-1","sessionId":"$sessionId","scenarioId":"${scenario.id}"}""",
+                MediaType.APPLICATION_JSON
+            ))
 
-        val first = client.createSession(sessionId, UUID.randomUUID())
-        val second = client.createSession(sessionId, UUID.randomUUID())
+        val first = client.createSession(sessionId, scenario)
+        val second = client.createSession(sessionId, scenario)
 
         assertEquals(first.aiSessionId, second.aiSessionId)
-        assertTrue(first.aiSessionId.startsWith("ai-"))
+        assertEquals("voice-test-1", first.aiSessionId)
+        server.verify()
     }
 }
