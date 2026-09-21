@@ -14,7 +14,7 @@ context=from-internal
 disallow=all
 allow=ulaw,alaw
 auth=1001-auth
-aors=1001-aor
+aors=1001
 direct_media=no
 rtp_symmetric=yes
 force_rport=yes
@@ -26,7 +26,7 @@ auth_type=userpass
 username=1001
 password=${SIP_1001_PASSWORD}
 
-[1001-aor]
+[1001]
 type=aor
 max_contacts=5
 remove_existing=yes
@@ -37,7 +37,7 @@ context=from-internal
 disallow=all
 allow=ulaw,alaw
 auth=1002-auth
-aors=1002-aor
+aors=1002
 direct_media=no
 rtp_symmetric=yes
 force_rport=yes
@@ -49,7 +49,7 @@ auth_type=userpass
 username=1002
 password=${SIP_1002_PASSWORD}
 
-[1002-aor]
+[1002]
 type=aor
 max_contacts=5
 remove_existing=yes

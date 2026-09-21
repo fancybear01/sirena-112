@@ -36,6 +36,27 @@ func Parse(buf []byte) (Packet, error) {
 	if len(buf) < headerLen {
 		return Packet{}, fmt.Errorf("rtp header truncated")
 	}
+	if b0&0x10 != 0 {
+		if len(buf) < headerLen+4 {
+			return Packet{}, fmt.Errorf("rtp extension header truncated")
+		}
+		words := int(binary.BigEndian.Uint16(buf[headerLen+2 : headerLen+4]))
+		headerLen += 4 + words*4
+		if len(buf) < headerLen {
+			return Packet{}, fmt.Errorf("rtp extension truncated")
+		}
+	}
+	payloadEnd := len(buf)
+	if b0&0x20 != 0 {
+		if payloadEnd <= headerLen {
+			return Packet{}, fmt.Errorf("rtp padding missing")
+		}
+		padding := int(buf[payloadEnd-1])
+		if padding == 0 || padding > payloadEnd-headerLen {
+			return Packet{}, fmt.Errorf("invalid rtp padding")
+		}
+		payloadEnd -= padding
+	}
 	b1 := buf[1]
 	p := Packet{
 		Version:        version,
@@ -47,7 +68,7 @@ func Parse(buf []byte) (Packet, error) {
 		SequenceNumber: binary.BigEndian.Uint16(buf[2:4]),
 		Timestamp:      binary.BigEndian.Uint32(buf[4:8]),
 		SSRC:           binary.BigEndian.Uint32(buf[8:12]),
-		Payload:        append([]byte(nil), buf[headerLen:]...),
+		Payload:        append([]byte(nil), buf[headerLen:payloadEnd]...),
 	}
 	return p, nil
 }

@@ -2,6 +2,9 @@ package rtp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
@@ -16,10 +19,13 @@ import (
 
 // EchoSession echoes μ-law RTP payloads back to the peer.
 type EchoSession struct {
-	conn   *net.UDPConn
-	log    *slog.Logger
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	conn    *net.UDPConn
+	log     *slog.Logger
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	started bool
+	stopped bool
+	wg      sync.WaitGroup
 
 	received atomic.Uint64
 	sent     atomic.Uint64
@@ -27,9 +33,6 @@ type EchoSession struct {
 	gaps     atomic.Uint64
 	bytesIn  atomic.Uint64
 	bytesOut atomic.Uint64
-
-	lastSeq atomic.Uint32
-	hasSeq  atomic.Bool
 }
 
 // Factory creates echo sessions.
@@ -52,6 +55,12 @@ func (f *Factory) Create(listenHost string, listenPort int) (ports.EchoSession, 
 }
 
 func (s *EchoSession) Start(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started || s.stopped {
+		return fmt.Errorf("rtp session already started or stopped")
+	}
+	s.started = true
 	ctx, s.cancel = context.WithCancel(ctx)
 	_ = s.conn.SetReadDeadline(time.Time{})
 	s.wg.Add(1)
@@ -61,12 +70,15 @@ func (s *EchoSession) Start(ctx context.Context) error {
 
 func (s *EchoSession) Stop(ctx context.Context) error {
 	_ = ctx
+	s.mu.Lock()
+	s.stopped = true
 	if s.cancel != nil {
 		s.cancel()
 	}
 	_ = s.conn.SetReadDeadline(time.Now())
 	_ = s.conn.Close()
 	s.wg.Wait()
+	s.mu.Unlock()
 	stats := s.Stats()
 	s.log.Info("rtp echo stopped",
 		"rxPackets", stats.ReceivedPackets,
@@ -92,10 +104,18 @@ func (s *EchoSession) Stats() ports.RTPStats {
 
 func (s *EchoSession) loop(ctx context.Context) {
 	defer s.wg.Done()
+	closeOnCancel := context.AfterFunc(ctx, func() { _ = s.conn.Close() })
+	defer closeOnCancel()
 	buf := make([]byte, 2048)
-	var ssrc uint32 = 0x5E1E4A11
-	var outSeq uint16
-	var outTS uint32
+	var seed [10]byte
+	_, _ = rand.Read(seed[:])
+	ssrc := binary.BigEndian.Uint32(seed[:4])
+	var peer *net.UDPAddr
+	var sourceSSRC uint32
+	var lastSeq uint16
+	hasSeq := false
+	outSeq := binary.BigEndian.Uint16(seed[4:6])
+	outTS := binary.BigEndian.Uint32(seed[6:10])
 
 	for {
 		n, addr, err := s.conn.ReadFromUDP(buf)
@@ -119,27 +139,38 @@ func (s *EchoSession) loop(ctx context.Context) {
 			continue
 		}
 
+		if len(pkt.Payload) == 0 {
+			continue
+		}
+		// One externalMedia peer per socket. Do not mix unrelated RTP sources.
+		if peer == nil {
+			peer = addr
+		}
+		if !peer.IP.Equal(addr.IP) || peer.Port != addr.Port || peer.Zone != addr.Zone {
+			continue
+		}
 		s.received.Add(1)
 		s.bytesIn.Add(uint64(len(pkt.Payload)))
-		if s.hasSeq.Load() {
-			prev := uint16(s.lastSeq.Load())
-			expected := prev + 1
-			if pkt.SequenceNumber != expected {
-				gap := uint16(pkt.SequenceNumber - expected)
-				s.gaps.Add(1)
-				s.lost.Add(uint64(gap))
-			}
+		if !hasSeq || sourceSSRC != pkt.SSRC {
+			sourceSSRC, lastSeq, hasSeq = pkt.SSRC, pkt.SequenceNumber, true
 		} else {
-			s.hasSeq.Store(true)
+			delta := int16(pkt.SequenceNumber - lastSeq)
+			if delta <= 0 {
+				continue
+			} // duplicate or late packet; keep the high-water mark
+			if delta > 1 {
+				s.gaps.Add(1)
+				s.lost.Add(uint64(delta - 1))
+			}
+			lastSeq = pkt.SequenceNumber
 		}
-		s.lastSeq.Store(uint32(pkt.SequenceNumber))
 
 		// Echo: decode/encode keeps the pipeline honest for later AI PCM path.
 		pcm := audio.ULAWToPCM(pkt.Payload)
 		ulaw := audio.PCMToULAW(pcm)
 		outSeq++
-		outTS += uint32(domain.RTPFrameSamples)
 		out := Marshal(outSeq, outTS, ssrc, domain.RTPPayloadTypeULAW, false, ulaw)
+		outTS += uint32(len(ulaw)) // PCMU: one sample per byte, including non-20ms packets
 		if _, err := s.conn.WriteToUDP(out, addr); err != nil {
 			continue
 		}

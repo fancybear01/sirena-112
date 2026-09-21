@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ type Config struct {
 
 	RTPListenAddr string
 	RTPPort       int
+	RTPPortEnd    int
 	RTPPublicHost string
 
 	CoreBaseURL string
@@ -46,6 +48,10 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("RTP_PORT: %w", err)
 	}
 	cfg.RTPPort = port
+	cfg.RTPPortEnd, err = strconv.Atoi(getEnv("RTP_PORT_END", strconv.Itoa(port)))
+	if err != nil {
+		return nil, fmt.Errorf("RTP_PORT_END: %w", err)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -58,8 +64,9 @@ func (c *Config) Validate() error {
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("MEDIA_HTTP_ADDR is required")
 	}
-	if c.ARIBaseURL == "" {
-		return fmt.Errorf("ARI_BASE_URL is required")
+	u, err := url.Parse(c.ARIBaseURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("ARI_BASE_URL must be an HTTP(S) URL without credentials, query or fragment")
 	}
 	if c.ARIUsername == "" {
 		return fmt.Errorf("ARI_USERNAME is required")
@@ -69,6 +76,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RTPPort <= 0 || c.RTPPort > 65535 {
 		return fmt.Errorf("RTP_PORT must be between 1 and 65535")
+	}
+	if c.RTPPortEnd < c.RTPPort || c.RTPPortEnd > 65535 {
+		return fmt.Errorf("RTP_PORT_END must be between RTP_PORT and 65535")
 	}
 	if c.RTPPublicHost == "" {
 		return fmt.Errorf("RTP_PUBLIC_HOST is required")

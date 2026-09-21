@@ -55,6 +55,7 @@ services:
       ARI_APP: sirena-media
       RTP_LISTEN_ADDR: "0.0.0.0"
       RTP_PORT: "18000"
+      RTP_PORT_END: "18099"
       RTP_PUBLIC_HOST: media
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORE_BASE_URL: ${CORE_MEDIA_EVENTS_URL:-}

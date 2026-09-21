@@ -26,3 +26,29 @@ func TestParseRejectsShort(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestParseExtensionCSRCPadding(t *testing.T) {
+	raw := rtp.Marshal(1, 160, 1, 0, false, nil)
+	raw[0] = 0xb1 // V2, padding, extension, one CSRC
+	raw = append(raw, 0, 0, 0, 9, 0xbe, 0xde, 0, 1, 1, 2, 3, 4, 0x80, 0xff, 0, 2)
+	pkt, err := rtp.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(pkt.Payload) != string([]byte{0x80, 0xff}) {
+		t.Fatalf("payload=%x", pkt.Payload)
+	}
+	for _, n := range []int{12, 15, 16, 19, 20, 23} {
+		if _, err := rtp.Parse(raw[:n]); err == nil {
+			t.Fatalf("accepted truncated length %d", n)
+		}
+	}
+	raw[len(raw)-1] = 0
+	if _, err := rtp.Parse(raw); err == nil {
+		t.Fatal("accepted zero padding")
+	}
+	raw[len(raw)-1] = 255
+	if _, err := rtp.Parse(raw); err == nil {
+		t.Fatal("accepted excessive padding")
+	}
+}

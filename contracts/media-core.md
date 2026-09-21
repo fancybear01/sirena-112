@@ -64,7 +64,12 @@ Media **не** ходит в PostgreSQL и не считает score.
 }
 ```
 
-Достаточно одного из идентификаторов. Повторный hangup идемпотентен → `200` со `state: ENDED`.
+Достаточно одного из идентификаторов; пустой запрос → `400`. Если переданы оба,
+они должны соответствовать одному звонку. Повторный успешный hangup идемпотентен
+→ `200` со `state: ENDED`. При ошибке очистки возвращается ошибка, ID ресурсов
+сохраняются для повторного hangup и фонового повтора cleanup каждые 5 секунд.
+Неудачный rollback start обрабатывается так же; до завершения cleanup
+сессия остаётся занятой (`409` на повторный start).
 
 ### `speech.play` / `speech.cancel`
 
@@ -76,7 +81,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 ### Health
 
 - `GET /health` → процесс жив
-- `GET /ready` → ARI доступен (`503` если нет)
+- `GET /ready` → доступны ARI HTTP и WebSocket событий (`503` если нет)
 - `GET /internal/v1/calls/{callId}` → debug snapshot
 
 ## События Media → Core
@@ -102,7 +107,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 |------|--------|
 | `call.ringing` | исходящий dial / Ring |
 | `call.answered` | канал Up + bridge |
-| `call.ended` | hangup / ChannelDestroyed |
+| `call.ended` | hangup / ChannelDestroyed / потеря ARI WebSocket или externalMedia после cleanup |
 | `media.error` | сбой ARI/start |
 | `media.latency` | зарезервировано (опционально) |
 | `system.error` | зарезервировано |
@@ -137,6 +142,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 | 409 | conflict | активный звонок на sessionId |
 | 501 | not_implemented | speech stubs |
 | 503 | ari_unavailable | /ready или ARI down |
+| 503 | capacity_exhausted | все RTP-порты заняты или ожидают cleanup |
 | 500 | internal_error | прочее |
 
 ## Smoke sequence
@@ -154,7 +160,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 ## Явные ограничения MVP
 
 - нет AI WebSocket (контракт уже в `media-ai.md`);
-- один активный RTP echo на процесс (порт `RTP_PORT`);
+- число одновременных звонков ограничено диапазоном `RTP_PORT`–`RTP_PORT_END`;
 - Core event publisher = log stub;
 - нет SRTP/Opus;
 - ARI HTTP на хосте только `127.0.0.1`.

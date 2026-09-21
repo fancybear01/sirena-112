@@ -33,17 +33,22 @@ type Service struct {
 	core     ports.CoreEventPublisher
 	log      *slog.Logger
 
-	mu          sync.RWMutex
-	byID        map[string]*runtime
-	bySession   map[string]string
-	byChannel   map[string]string
+	mu        sync.RWMutex
+	closing   bool
+	byID      map[string]*runtime
+	bySession map[string]string
+	byChannel map[string]string
 }
 
 type runtime struct {
-	call      *domain.Call
-	resources ports.CallResources
-	cancel    context.CancelFunc
-	done      bool
+	mu         sync.Mutex // serializes state changes, publication and cleanup for this call
+	call       *domain.Call
+	resources  ports.CallResources
+	ready      chan struct{}
+	starting   bool
+	pending    []ports.ARIEvent
+	done       bool
+	cleanupErr error
 }
 
 func NewService(asterisk ports.Asterisk, core ports.CoreEventPublisher, log *slog.Logger) *Service {
@@ -60,27 +65,44 @@ func NewService(asterisk ports.Asterisk, core ports.CoreEventPublisher, log *slo
 // HandleARIEvent maps Asterisk events onto call state + Core events.
 func (s *Service) HandleARIEvent(evt ports.ARIEvent) {
 	s.mu.RLock()
-	callID := s.byChannel[evt.ChannelID]
+	callID := evt.CallID
+	if callID == "" {
+		callID = s.byChannel[evt.ChannelID]
+	}
 	rt := s.byID[callID]
 	s.mu.RUnlock()
 	if rt == nil {
 		return
 	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.starting {
+		rt.pending = append(rt.pending, evt)
+		return
+	}
+	s.handleEvent(rt, evt)
+}
 
+// Called with the runtime lock held.
+func (s *Service) handleEvent(rt *runtime, evt ports.ARIEvent) {
+	if rt.done {
+		return
+	}
 	ctx := context.Background()
 	switch evt.Type {
 	case "ChannelStateChange":
 		switch evt.State {
-		case "Ringing", "Ring":
+		case "Ring", "Ringing":
 			s.transition(ctx, rt, domain.CallStateRinging, domain.EventCallRinging)
 		case "Up":
 			s.transition(ctx, rt, domain.CallStateActive, domain.EventCallAnswered)
 		}
 	case "ChannelDestroyed", "StasisEnd":
-		if rt.call.State.IsTerminal() {
-			return
+		if evt.State == "Failed" {
+			s.finish(ctx, rt, domain.CallStateFailed, domain.EventCallEnded, fmt.Errorf("media channel failed"))
+		} else {
+			s.finish(ctx, rt, domain.CallStateEnded, domain.EventCallEnded, nil)
 		}
-		s.finish(ctx, rt, domain.CallStateEnded, domain.EventCallEnded, nil)
 	}
 }
 
@@ -88,16 +110,6 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Call, er
 	if cmd.SessionID == "" || cmd.AISessionID == "" || cmd.SIPAddress == "" {
 		return nil, fmt.Errorf("%w: sessionId, aiSessionId and sipAddress are required", domain.ErrInvalidArgument)
 	}
-
-	s.mu.Lock()
-	if existing, ok := s.bySession[cmd.SessionID]; ok {
-		rt := s.byID[existing]
-		s.mu.Unlock()
-		if rt != nil && !rt.call.State.IsTerminal() {
-			return nil, fmt.Errorf("%w: %s", domain.ErrCallExists, cmd.SessionID)
-		}
-	}
-	s.mu.Unlock()
 
 	callID := uuid.NewString()
 	call := &domain.Call{
@@ -108,70 +120,155 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Call, er
 		State:       domain.CallStateNew,
 	}
 
+	rt := &runtime{call: call, ready: make(chan struct{}), starting: true}
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return nil, domain.ErrARIUnavailable
+	}
+	if _, exists := s.bySession[cmd.SessionID]; exists {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%w: %s", domain.ErrCallExists, cmd.SessionID)
+	}
+	s.byID[callID] = rt
+	s.bySession[cmd.SessionID] = callID
+	s.mu.Unlock()
+
 	res, err := s.asterisk.StartCall(ctx, ports.StartCallRequest{
 		CallID:      callID,
 		SessionID:   cmd.SessionID,
 		AISessionID: cmd.AISessionID,
 		SIPAddress:  cmd.SIPAddress,
 	})
-	if err != nil {
-		call.State = domain.CallStateFailed
-		_ = s.publish(ctx, call, domain.EventMediaError, map[string]any{
-			"callId": callID,
-			"error":  err.Error(),
-		})
-		return nil, err
-	}
-
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	defer close(rt.ready)
+	rt.starting = false
+	rt.resources = res
 	call.AsteriskChannelID = res.ChannelID
 	call.BridgeID = res.BridgeID
 	call.ExternalMediaID = res.ExternalMediaID
-
-	_, cancel := context.WithCancel(context.Background())
-	rt := &runtime{call: call, resources: res, cancel: cancel}
-
 	s.mu.Lock()
-	s.byID[callID] = rt
-	s.bySession[cmd.SessionID] = callID
-	s.byChannel[res.ChannelID] = callID
+	if res.ChannelID != "" {
+		s.byChannel[res.ChannelID] = callID
+	}
 	s.mu.Unlock()
-
-	s.log.Info("call created",
-		"requestId", cmd.RequestID,
-		"sessionId", cmd.SessionID,
-		"callId", callID,
-		"channelId", res.ChannelID,
-	)
-
-	// Outbound dial usually rings immediately.
-	s.transition(ctx, rt, domain.CallStateRinging, domain.EventCallRinging)
-	return call, nil
+	if err != nil {
+		call.State = domain.CallStateFailed
+		rt.done = true
+		rt.pending = nil
+		_ = s.publish(context.Background(), call, domain.EventMediaError, map[string]any{"callId": callID, "error": err.Error()})
+		if res != (ports.CallResources{}) {
+			rt.cleanupErr = err
+		} else {
+			s.remove(rt)
+		}
+		return nil, err
+	}
+	s.transition(context.Background(), rt, domain.CallStateRinging, domain.EventCallRinging)
+	for _, evt := range rt.pending {
+		s.handleEvent(rt, evt)
+	}
+	rt.pending = nil
+	cp := *call
+	return &cp, nil
 }
 
 func (s *Service) Hangup(ctx context.Context, cmd HangupCommand) (*domain.Call, error) {
+	if cmd.CallID == "" && cmd.SessionID == "" {
+		return nil, fmt.Errorf("%w: callId or sessionId is required", domain.ErrInvalidArgument)
+	}
 	rt := s.find(cmd.CallID, cmd.SessionID)
 	if rt == nil {
-		// Idempotent hangup: already gone.
 		return &domain.Call{ID: cmd.CallID, SessionID: cmd.SessionID, State: domain.CallStateEnded}, nil
 	}
-	if rt.call.State.IsTerminal() {
-		return rt.call, nil
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-rt.ready:
 	}
-	_ = rt.call.Transition(domain.CallStateEnding)
-	_ = s.asterisk.Hangup(ctx, rt.resources.ChannelID)
-	s.finish(ctx, rt, domain.CallStateEnded, domain.EventCallEnded, nil)
-	return rt.call, nil
-}
-
-func (s *Service) Get(callID string) (*domain.Call, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	rt := s.byID[callID]
-	if rt == nil {
-		return nil, domain.ErrCallNotFound
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if cmd.SessionID != "" && cmd.SessionID != rt.call.SessionID {
+		return nil, fmt.Errorf("%w: callId and sessionId do not match", domain.ErrInvalidArgument)
+	}
+	if !rt.done || rt.cleanupErr != nil {
+		_ = rt.call.Transition(domain.CallStateEnding)
+		if err := s.finish(ctx, rt, domain.CallStateEnded, domain.EventCallEnded, nil); err != nil {
+			return nil, err
+		}
 	}
 	cp := *rt.call
 	return &cp, nil
+}
+
+func (s *Service) Get(callID string) (*domain.Call, error) {
+	rt := s.find(callID, "")
+	if rt == nil {
+		return nil, domain.ErrCallNotFound
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	cp := *rt.call
+	return &cp, nil
+}
+
+// Shutdown rejects new calls and releases active calls after HTTP has drained.
+func (s *Service) Shutdown(ctx context.Context) {
+	s.mu.Lock()
+	s.closing = true
+	ids := make([]string, 0, len(s.byID))
+	for id := range s.byID {
+		ids = append(ids, id)
+	}
+	s.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Hangup(ctx, HangupCommand{CallID: id}); err != nil {
+				s.log.Error("shutdown call failed", "callId", id, "err", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// RunCleanup retries failed cleanup for both failed starts and terminated calls.
+// It owns no persistent state: resources are retained in the in-memory registry.
+func (s *Service) RunCleanup(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.retryCleanup(ctx)
+		}
+	}
+}
+
+func (s *Service) retryCleanup(ctx context.Context) {
+	s.mu.RLock()
+	calls := make([]*runtime, 0, len(s.byID))
+	for _, rt := range s.byID {
+		calls = append(calls, rt)
+	}
+	s.mu.RUnlock()
+	for _, rt := range calls {
+		if ctx.Err() != nil {
+			return
+		}
+		if !rt.mu.TryLock() {
+			continue
+		}
+		if rt.cleanupErr != nil {
+			_ = s.finish(ctx, rt, domain.CallStateFailed, domain.EventCallEnded, nil)
+		}
+		rt.mu.Unlock()
+	}
 }
 
 func (s *Service) find(callID, sessionID string) *runtime {
@@ -204,34 +301,33 @@ func (s *Service) transition(ctx context.Context, rt *runtime, next domain.CallS
 	})
 }
 
-func (s *Service) finish(ctx context.Context, rt *runtime, state domain.CallState, eventType string, cause error) {
-	s.mu.Lock()
-	if rt.done {
-		s.mu.Unlock()
-		return
+func (s *Service) finish(ctx context.Context, rt *runtime, state domain.CallState, eventType string, cause error) error {
+	if rt.done && rt.cleanupErr == nil {
+		return nil
 	}
 	rt.done = true
-	if !rt.call.State.IsTerminal() {
-		if err := rt.call.Transition(state); err != nil {
-			rt.call.State = state
-		}
+	// Request cancellation must not prevent resource cleanup.
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rt.cleanupErr = s.asterisk.DestroyCall(cleanupCtx, rt.resources)
+	if rt.cleanupErr != nil {
+		rt.call.State = domain.CallStateFailed
+		s.log.Error("call cleanup failed", "callId", rt.call.ID, "err", rt.cleanupErr)
+		_ = s.publish(cleanupCtx, rt.call, domain.EventMediaError, map[string]any{"callId": rt.call.ID, "error": rt.cleanupErr.Error()})
+		// Keep IDs and the session reservation so a repeated hangup can retry cleanup.
+		return rt.cleanupErr
 	}
-	s.mu.Unlock()
-
-	_ = s.asterisk.DestroyCall(ctx, rt.resources)
-	if rt.cancel != nil {
-		rt.cancel()
-	}
-	payload := map[string]any{
-		"callId":      rt.call.ID,
-		"aiSessionId": rt.call.AISessionID,
-		"channelId":   rt.call.AsteriskChannelID,
-	}
+	rt.call.State = state
+	payload := map[string]any{"callId": rt.call.ID, "aiSessionId": rt.call.AISessionID, "channelId": rt.call.AsteriskChannelID}
 	if cause != nil {
 		payload["error"] = cause.Error()
 	}
-	_ = s.publish(ctx, rt.call, eventType, payload)
+	_ = s.publish(cleanupCtx, rt.call, eventType, payload)
+	s.remove(rt)
+	return nil
+}
 
+func (s *Service) remove(rt *runtime) {
 	s.mu.Lock()
 	delete(s.byID, rt.call.ID)
 	delete(s.bySession, rt.call.SessionID)

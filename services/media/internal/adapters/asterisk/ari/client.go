@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/fancybear01/sirena-112/services/media/internal/application/ports"
@@ -29,15 +34,27 @@ type Client struct {
 	rtpPublicHost string
 	rtpListenHost string
 	rtpPort       int
+	rtpPortEnd    int
 	echoFactory   ports.EchoFactory
 
-	mu       sync.Mutex
-	handler  ports.EventHandler
-	runtimes map[string]*callRuntime // key: callID
-	byChan   map[string]string       // channelID -> callID
+	connected atomic.Bool
+	mu        sync.Mutex
+	handler   ports.EventHandler
+	runtimes  map[string]*callRuntime // key: callID
+	reserved  map[int]bool
+	byChan    map[string]string // channelID -> callID
 }
 
 type callRuntime struct {
+	mu              sync.Mutex
+	port            int
+	stopped         bool
+	ready           chan struct{}
+	done            chan struct{}
+	stopOnce        sync.Once
+	overflow        chan struct{}
+	overflowOnce    sync.Once
+	events          chan ports.ARIEvent
 	callID          string
 	sessionID       string
 	aiSessionID     string
@@ -57,11 +74,18 @@ type Config struct {
 	RTPPublicHost string
 	RTPListenHost string
 	RTPPort       int
+	RTPPortEnd    int
 	EchoFactory   ports.EchoFactory
 	Log           *slog.Logger
 }
 
 func NewClient(cfg Config) *Client {
+	if cfg.RTPPort == 0 {
+		cfg.RTPPort = 18000
+	}
+	if cfg.RTPPortEnd == 0 {
+		cfg.RTPPortEnd = cfg.RTPPort
+	}
 	return &Client{
 		baseURL:       strings.TrimRight(cfg.BaseURL, "/"),
 		username:      cfg.Username,
@@ -72,6 +96,8 @@ func NewClient(cfg Config) *Client {
 		rtpPublicHost: cfg.RTPPublicHost,
 		rtpListenHost: cfg.RTPListenHost,
 		rtpPort:       cfg.RTPPort,
+		rtpPortEnd:    cfg.RTPPortEnd,
+		reserved:      map[int]bool{},
 		echoFactory:   cfg.EchoFactory,
 		runtimes:      map[string]*callRuntime{},
 		byChan:        map[string]string{},
@@ -79,6 +105,9 @@ func NewClient(cfg Config) *Client {
 }
 
 func (c *Client) Ready(ctx context.Context) error {
+	if !c.connected.Load() {
+		return domain.ErrARIUnavailable
+	}
 	resp, err := c.do(ctx, http.MethodGet, "/asterisk/info", nil, nil)
 	if err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrARIUnavailable, err)
@@ -90,79 +119,116 @@ func (c *Client) Ready(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) StartCall(ctx context.Context, req ports.StartCallRequest) (ports.CallResources, error) {
+// A nonempty result on error means rollback failed: the caller must retain the
+// IDs and retry DestroyCall. Ports remain reserved until remote cleanup succeeds.
+func (c *Client) StartCall(ctx context.Context, req ports.StartCallRequest) (result ports.CallResources, startErr error) {
+	if !c.connected.Load() {
+		return result, domain.ErrARIUnavailable
+	}
+	echo, port, err := c.allocateEcho()
+	if err != nil {
+		return result, err
+	}
+	rt := &callRuntime{callID: req.CallID, sessionID: req.SessionID, aiSessionID: req.AISessionID,
+		echo: echo, port: port, channelID: req.CallID, bridgeID: req.CallID + "-bridge", externalMediaID: req.CallID + "-media",
+		ready: make(chan struct{}), done: make(chan struct{}), overflow: make(chan struct{}), events: make(chan ports.ARIEvent, 64)}
+	res := ports.CallResources{ChannelID: rt.channelID, BridgeID: rt.bridgeID, ExternalMediaID: rt.externalMediaID}
+	// Publish IDs before ARI can send events, but gate this call's worker on ready.
+	rt.mu.Lock()
+	c.mu.Lock()
+	_, exists := c.runtimes[req.CallID]
+	if exists || !c.connected.Load() {
+		delete(c.reserved, port)
+		c.mu.Unlock()
+		rt.mu.Unlock()
+		_ = echo.Stop(context.Background())
+		if exists {
+			return result, domain.ErrCallExists
+		}
+		return result, domain.ErrARIUnavailable
+	}
+	c.runtimes[req.CallID] = rt
+	c.byChan[rt.channelID], c.byChan[rt.externalMediaID] = req.CallID, req.CallID
+	c.mu.Unlock()
+	go c.runEvents(rt)
+	defer func() {
+		if startErr != nil {
+			rt.stopped = true
+			rt.stopOnce.Do(func() { close(rt.done) })
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = echo.Stop(cleanupCtx)
+			if cleanupErr := c.cleanup(cleanupCtx, res); cleanupErr != nil {
+				result = res
+				startErr = errors.Join(startErr, fmt.Errorf("start rollback: %w", cleanupErr))
+				c.log.Error("start rollback pending", "callId", req.CallID, "err", cleanupErr)
+			} else {
+				c.forget(rt)
+			}
+		}
+		rt.mu.Unlock()
+		close(rt.ready)
+	}()
+	if err := echo.Start(context.Background()); err != nil {
+		return result, err
+	}
+	if _, err := c.createBridge(ctx, req.CallID); err != nil {
+		return result, err
+	}
+	extHost := net.JoinHostPort(c.rtpPublicHost, strconv.Itoa(port))
+	if _, err := c.createExternalMedia(ctx, extHost, res.ExternalMediaID); err != nil {
+		return result, err
+	}
+	if err := c.addToBridge(ctx, res.BridgeID, res.ExternalMediaID); err != nil {
+		return result, err
+	}
 	endpoint := req.SIPAddress
 	if !strings.Contains(endpoint, "/") {
 		endpoint = "PJSIP/" + endpoint
 	}
+	if _, err := c.originate(ctx, endpoint, req); err != nil {
+		return result, err
+	}
+	c.log.Info("ari call started", "callId", req.CallID, "sessionId", req.SessionID, "channelId", res.ChannelID, "rtpHost", extHost)
+	return res, nil
+}
 
-	echo, boundPort, err := c.echoFactory.Create(c.rtpListenHost, c.rtpPort)
-	if err != nil {
-		return ports.CallResources{}, fmt.Errorf("rtp listen: %w", err)
+func (c *Client) allocateEcho() (ports.EchoSession, int, error) {
+	for port := c.rtpPort; port <= c.rtpPortEnd; port++ {
+		c.mu.Lock()
+		busy := c.reserved[port]
+		if !busy {
+			c.reserved[port] = true
+		}
+		c.mu.Unlock()
+		if busy {
+			continue
+		}
+		echo, bound, err := c.echoFactory.Create(c.rtpListenHost, port)
+		if err == nil {
+			return echo, bound, nil
+		}
+		c.mu.Lock()
+		delete(c.reserved, port)
+		c.mu.Unlock()
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			return nil, 0, fmt.Errorf("rtp listen: %w", err)
+		}
 	}
-	// Own lifetime via DestroyCall; do not bind to the HTTP request context.
-	if err := echo.Start(context.Background()); err != nil {
-		_ = echo.Stop(context.Background())
-		return ports.CallResources{}, err
-	}
+	return nil, 0, domain.ErrCapacityExhausted
+}
 
-	bridgeID, err := c.createBridge(ctx, req.CallID)
-	if err != nil {
-		_ = echo.Stop(context.Background())
-		return ports.CallResources{}, err
-	}
-
-	extHost := fmt.Sprintf("%s:%d", c.rtpPublicHost, boundPort)
-	extID, err := c.createExternalMedia(ctx, extHost)
-	if err != nil {
-		_ = c.destroyBridge(ctx, bridgeID)
-		_ = echo.Stop(context.Background())
-		return ports.CallResources{}, err
-	}
-	if err := c.addToBridge(ctx, bridgeID, extID); err != nil {
-		_ = c.hangupChannel(ctx, extID)
-		_ = c.destroyBridge(ctx, bridgeID)
-		_ = echo.Stop(context.Background())
-		return ports.CallResources{}, err
-	}
-
-	channelID, err := c.originate(ctx, endpoint, req)
-	if err != nil {
-		_ = c.hangupChannel(ctx, extID)
-		_ = c.destroyBridge(ctx, bridgeID)
-		_ = echo.Stop(context.Background())
-		return ports.CallResources{}, err
-	}
-
-	rt := &callRuntime{
-		callID:          req.CallID,
-		sessionID:       req.SessionID,
-		aiSessionID:     req.AISessionID,
-		echo:            echo,
-		bridgeID:        bridgeID,
-		externalMediaID: extID,
-		channelID:       channelID,
-	}
+// Called with rt.mu held. No network or callback runs under the registry lock.
+func (c *Client) forget(rt *callRuntime) {
 	c.mu.Lock()
-	c.runtimes[req.CallID] = rt
-	c.byChan[channelID] = req.CallID
-	c.byChan[extID] = req.CallID
-	c.mu.Unlock()
-
-	c.log.Info("ari call started",
-		"callId", req.CallID,
-		"sessionId", req.SessionID,
-		"channelId", channelID,
-		"bridgeId", bridgeID,
-		"externalMediaId", extID,
-		"rtpHost", extHost,
-	)
-
-	return ports.CallResources{
-		ChannelID:       channelID,
-		BridgeID:        bridgeID,
-		ExternalMediaID: extID,
-	}, nil
+	defer c.mu.Unlock()
+	if c.runtimes[rt.callID] != rt {
+		return
+	}
+	delete(c.byChan, rt.channelID)
+	delete(c.byChan, rt.externalMediaID)
+	delete(c.runtimes, rt.callID)
+	delete(c.reserved, rt.port)
 }
 
 func (c *Client) Hangup(ctx context.Context, channelID string) error {
@@ -170,35 +236,38 @@ func (c *Client) Hangup(ctx context.Context, channelID string) error {
 }
 
 func (c *Client) DestroyCall(ctx context.Context, res ports.CallResources) error {
-	var first error
-	capture := func(err error) {
-		if err != nil && first == nil {
-			first = err
-		}
+	c.mu.Lock()
+	rt := c.runtimes[c.byChan[res.ChannelID]]
+	c.mu.Unlock()
+	if rt == nil {
+		return c.cleanup(ctx, res)
 	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.stopped = true
+	rt.stopOnce.Do(func() { close(rt.done) })
+	if rt.echo != nil {
+		_ = rt.echo.Stop(ctx)
+	}
+	if err := c.cleanup(ctx, res); err != nil {
+		return err
+	}
+	c.forget(rt)
+	return nil
+}
+
+func (c *Client) cleanup(ctx context.Context, res ports.CallResources) error {
+	var errs []error
 	if res.ChannelID != "" {
-		capture(c.hangupChannel(ctx, res.ChannelID))
+		errs = append(errs, c.hangupChannel(ctx, res.ChannelID))
 	}
 	if res.ExternalMediaID != "" {
-		capture(c.hangupChannel(ctx, res.ExternalMediaID))
+		errs = append(errs, c.hangupChannel(ctx, res.ExternalMediaID))
 	}
 	if res.BridgeID != "" {
-		capture(c.destroyBridge(ctx, res.BridgeID))
+		errs = append(errs, c.destroyBridge(ctx, res.BridgeID))
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for callID, rt := range c.runtimes {
-		if rt.channelID == res.ChannelID || rt.bridgeID == res.BridgeID || rt.externalMediaID == res.ExternalMediaID {
-			if rt.echo != nil {
-				_ = rt.echo.Stop(ctx)
-			}
-			delete(c.byChan, rt.channelID)
-			delete(c.byChan, rt.externalMediaID)
-			delete(c.runtimes, callID)
-		}
-	}
-	return first
+	return errors.Join(errs...)
 }
 
 func (c *Client) Subscribe(ctx context.Context, handler ports.EventHandler) error {
@@ -212,6 +281,7 @@ func (c *Client) Subscribe(ctx context.Context, handler ports.EventHandler) erro
 func (c *Client) originate(ctx context.Context, endpoint string, req ports.StartCallRequest) (string, error) {
 	q := url.Values{}
 	q.Set("endpoint", endpoint)
+	q.Set("channelId", req.CallID)
 	q.Set("app", c.app)
 	q.Set("appArgs", strings.Join([]string{req.CallID, req.SessionID, req.AISessionID}, ","))
 	q.Set("callerId", "Sirena Media <media>")
@@ -239,6 +309,7 @@ func (c *Client) createBridge(ctx context.Context, callID string) (string, error
 	q := url.Values{}
 	q.Set("type", "mixing")
 	q.Set("name", "sirena-"+callID)
+	q.Set("bridgeId", callID+"-bridge")
 	resp, err := c.do(ctx, http.MethodPost, "/bridges?"+q.Encode(), nil, nil)
 	if err != nil {
 		return "", err
@@ -270,10 +341,11 @@ func (c *Client) destroyBridge(ctx context.Context, bridgeID string) error {
 	return nil
 }
 
-func (c *Client) createExternalMedia(ctx context.Context, externalHost string) (string, error) {
+func (c *Client) createExternalMedia(ctx context.Context, externalHost, channelID string) (string, error) {
 	q := url.Values{}
 	q.Set("app", c.app)
 	q.Set("external_host", externalHost)
+	q.Set("channelId", channelID)
 	q.Set("format", "ulaw")
 	q.Set("encapsulation", "rtp")
 	q.Set("transport", "udp")
@@ -307,19 +379,6 @@ func (c *Client) addToBridge(ctx context.Context, bridgeID, channelID string) er
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("addChannel: %s", truncate(body))
-	}
-	return nil
-}
-
-func (c *Client) answer(ctx context.Context, channelID string) error {
-	resp, err := c.do(ctx, http.MethodPost, "/channels/"+url.PathEscape(channelID)+"/answer", nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotFound {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("answer: %s", truncate(body))
 	}
 	return nil
 }
@@ -362,7 +421,11 @@ func (c *Client) wsLoop(ctx context.Context) {
 		default:
 		}
 		if err := c.wsOnce(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			c.log.Warn("ari websocket disconnected", "err", err, "retryIn", backoff.String())
+			c.failCalls()
 		}
 		select {
 		case <-ctx.Done():
@@ -371,6 +434,9 @@ func (c *Client) wsLoop(ctx context.Context) {
 		}
 		if backoff < 30*time.Second {
 			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
 		}
 	}
 }
@@ -389,18 +455,46 @@ func (c *Client) wsOnce(ctx context.Context) error {
 		Host:   u.Host,
 		Path:   strings.TrimSuffix(u.Path, "/ari") + "/ari/events",
 		RawQuery: url.Values{
-			"app":           {c.app},
-			"api_key":       {c.username + ":" + c.password},
-			"subscribeAll":  {"false"},
+			"app":          {c.app},
+			"subscribeAll": {"false"},
 		}.Encode(),
 	}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, wsURL.String(), nil)
+	auth, _ := http.NewRequest(http.MethodGet, c.baseURL, nil)
+	auth.SetBasicAuth(c.username, c.password)
+	conn, resp, err := dialer.DialContext(ctx, wsURL.String(), auth.Header)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	c.connected.Store(true)
+	defer c.connected.Store(false)
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	conn.SetReadLimit(1 << 20)
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(60 * time.Second)) })
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
 	c.log.Info("ari websocket connected", "app", c.app)
 
 	for {
@@ -409,12 +503,25 @@ func (c *Client) wsOnce(ctx context.Context) error {
 			return ctx.Err()
 		default:
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			return err
 		}
 		c.handleWSMessage(ctx, data)
+	}
+}
+
+// Events may be lost across a reconnect. Fail closed instead of keeping stale calls.
+func (c *Client) failCalls() {
+	c.mu.Lock()
+	events := make([]ports.ARIEvent, 0, len(c.runtimes))
+	for _, rt := range c.runtimes {
+		events = append(events, ports.ARIEvent{CallID: rt.callID, ChannelID: rt.channelID, Type: "ChannelDestroyed", State: "Failed"})
+	}
+	c.mu.Unlock()
+	for _, evt := range events {
+		c.enqueue(evt)
 	}
 }
 
@@ -441,59 +548,94 @@ func (c *Client) handleWSMessage(ctx context.Context, data []byte) {
 
 	switch typ {
 	case "StasisStart":
-		c.onStasisStart(ctx, channelID, args)
+		c.enqueue(ports.ARIEvent{Type: typ, ChannelID: channelID, Args: args})
 	case "ChannelStateChange":
-		c.emit(ports.ARIEvent{Type: typ, ChannelID: channelID, State: state, Args: args})
+		if state == "Up" {
+			return
+		}
+		c.enqueue(ports.ARIEvent{Type: typ, ChannelID: channelID, State: state, Args: args})
 	case "ChannelDestroyed", "StasisEnd":
-		c.emit(ports.ARIEvent{Type: typ, ChannelID: channelID, State: state, Args: args})
+		c.enqueue(ports.ARIEvent{Type: typ, ChannelID: channelID, State: state, Args: args})
 	}
 }
 
-func (c *Client) onStasisStart(ctx context.Context, channelID string, args []string) {
+// The WebSocket reader only enqueues: a slow call cannot stall heartbeats or
+// other calls. Each worker preserves ordering, with bounded memory per call.
+func (c *Client) enqueue(evt ports.ARIEvent) {
 	c.mu.Lock()
-	callID, ok := c.byChan[channelID]
-	var rt *callRuntime
-	if ok {
-		rt = c.runtimes[callID]
+	if evt.CallID == "" {
+		evt.CallID = c.byChan[evt.ChannelID]
 	}
-	// External media channel also enters Stasis; already on bridge.
-	isExt := rt != nil && rt.externalMediaID == channelID
+	rt := c.runtimes[evt.CallID]
 	c.mu.Unlock()
-
-	if isExt {
-		return
-	}
-
-	if rt == nil && len(args) > 0 {
-		callID = args[0]
-		c.mu.Lock()
-		rt = c.runtimes[callID]
-		if rt != nil {
-			rt.channelID = channelID
-			c.byChan[channelID] = callID
-		}
-		c.mu.Unlock()
-	}
 	if rt == nil {
-		c.log.Warn("stasis start for unknown channel", "channelId", channelID)
 		return
 	}
+	select {
+	case <-rt.done:
+		return
+	default:
+	}
+	select {
+	case rt.events <- evt:
+	case <-rt.done:
+	default:
+		rt.overflowOnce.Do(func() { close(rt.overflow) })
+	}
+}
 
-	_ = c.answer(ctx, channelID)
-	if err := c.addToBridge(ctx, rt.bridgeID, channelID); err != nil {
-		c.log.Error("add sip channel to bridge failed", "err", err, "callId", rt.callID, "channelId", channelID)
-		c.emit(ports.ARIEvent{Type: "ChannelDestroyed", ChannelID: channelID, State: "Failed"})
+func (c *Client) runEvents(rt *callRuntime) {
+	select {
+	case <-rt.ready:
+	case <-rt.done:
 		return
 	}
-	c.mu.Lock()
-	rt.bridged = true
-	c.mu.Unlock()
-
-	c.emit(ports.ARIEvent{Type: "ChannelStateChange", ChannelID: channelID, State: "Up", Args: args})
+	for {
+		select {
+		case <-rt.done:
+			return
+		case <-rt.overflow:
+			c.emit(ports.ARIEvent{CallID: rt.callID, ChannelID: rt.channelID, Type: "ChannelDestroyed", State: "Failed"})
+			return
+		case evt := <-rt.events:
+			rt.mu.Lock()
+			if rt.stopped {
+				rt.mu.Unlock()
+				return
+			}
+			if evt.Type == "StasisStart" {
+				if evt.ChannelID == rt.externalMediaID || rt.bridged {
+					rt.mu.Unlock()
+					continue
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				err := c.addToBridge(ctx, rt.bridgeID, rt.channelID)
+				cancel()
+				rt.bridged = err == nil
+				evt.Type, evt.State = "ChannelStateChange", "Up"
+				if err != nil {
+					c.log.Error("add sip channel to bridge failed", "callId", rt.callID, "err", err)
+					evt.Type, evt.State = "ChannelDestroyed", "Failed"
+				}
+			}
+			rt.mu.Unlock()
+			c.emit(evt)
+		}
+	}
 }
 
 func (c *Client) emit(evt ports.ARIEvent) {
 	c.mu.Lock()
+	if evt.CallID == "" {
+		evt.CallID = c.byChan[evt.ChannelID]
+	}
+	if rt := c.runtimes[evt.CallID]; rt != nil && evt.ChannelID == rt.externalMediaID {
+		if evt.Type != "ChannelDestroyed" && evt.Type != "StasisEnd" {
+			c.mu.Unlock()
+			return
+		}
+		evt.State = "Failed"
+	}
 	h := c.handler
 	c.mu.Unlock()
 	if h != nil {
