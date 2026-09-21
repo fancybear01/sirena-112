@@ -43,7 +43,7 @@ describe('teacher scenario flow', () => {
     const user = userEvent.setup();
     renderTeacher();
 
-    expect(await screen.findByRole('heading', { name: 'Пожар в жилом доме', level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Открыть сценарий «ДТП с пострадавшими»' }));
     expect(screen.getByRole('heading', { name: 'ДТП с пострадавшими', level: 2 })).toBeInTheDocument();
 
@@ -62,15 +62,15 @@ describe('teacher scenario flow', () => {
     expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Новое занятие' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Открыть сценарий «Пожар в жилом доме»' }));
+    await user.click(screen.getByRole('button', { name: 'Открыть сценарий «Задымление в мусоропроводе»' }));
     expect(within(scenarioInfo).getByRole('heading', { name: 'ДТП с пострадавшими' })).toBeInTheDocument();
-    expect(within(scenarioInfo).queryByRole('heading', { name: 'Пожар в жилом доме' })).not.toBeInTheDocument();
+    expect(within(scenarioInfo).queryByRole('heading', { name: 'Задымление в мусоропроводе' })).not.toBeInTheDocument();
   });
 
   it('filters scenarios by difficulty', async () => {
     const user = userEvent.setup();
     renderTeacher();
-    await screen.findByRole('heading', { name: 'Пожар в жилом доме', level: 2 });
+    await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
 
     await user.click(screen.getByRole('radio', { name: 'Высокая' }));
     expect(screen.getByRole('heading', { name: 'Запах газа в подъезде', level: 2 })).toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('teacher scenario flow', () => {
   it('restores the session after a page reload and clears it for a new session', async () => {
     const user = userEvent.setup();
     renderTeacher();
-    await screen.findByRole('heading', { name: 'Пожар в жилом доме', level: 2 });
+    await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
     await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
     await screen.findByText('ACTIVE');
     const sessionId = document.querySelector('.session-id')?.textContent;

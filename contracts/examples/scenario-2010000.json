@@ -1,0 +1,127 @@
+{
+  "id": "3f0e5fd3-742c-5ed0-8932-3ff463870d2e",
+  "version": 3,
+  "title": "ДТП без пострадавших",
+  "category": "ACCIDENT",
+  "difficulty": "BASIC",
+  "timeLimitSeconds": 30,
+  "profile": "Синтетический интеграционный пример по классификатору. ДТП без пострадавших",
+  "groundTruth": {
+    "classifierCode": "2010000",
+    "incidentType": "ДТП без пострадавших",
+    "ekp35IncidentType": "ДТП без пострадаших",
+    "responseScenarioCode": "2_4",
+    "responseScenarioStatus": "CODE",
+    "classifierVersion": "046-2024-11-15",
+    "mainServices": [
+      {
+        "id": "POLICE",
+        "displayName": "Служба 102 (МВД)"
+      }
+    ],
+    "requiredServices": [
+      {
+        "id": "FSO",
+        "displayName": "ФСО",
+        "reasons": [
+          {
+            "ruleId": "classifier.2010000.CH",
+            "message": "Колонка CH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MAYOR",
+        "displayName": "Аппарат МЭРА",
+        "reasons": [
+          {
+            "ruleId": "classifier.2010000.BH",
+            "message": "Колонка BH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "NTU",
+        "displayName": "ГКУ НТУ",
+        "reasons": [
+          {
+            "ruleId": "classifier.2010000.CG",
+            "message": "Колонка CG: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "POLICE",
+        "displayName": "Служба 102 (МВД)",
+        "reasons": [
+          {
+            "ruleId": "classifier.2010000.V",
+            "message": "Колонка V: ДТП без пострадавших",
+            "matchedInputIds": [
+              "routing.offence",
+              "routing.victims-status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ZODD",
+        "displayName": "ЦОДД",
+        "reasons": [
+          {
+            "ruleId": "classifier.2010000.BD",
+            "message": "Колонка BD: ДТП без пострадавших",
+            "matchedInputIds": []
+          }
+        ]
+      }
+    ],
+    "expectedInput": {
+      "incident": {
+        "selectedSignIds": [
+          "sign.52c18b7c6fa1b1a9"
+        ],
+        "answers": [
+          {
+            "questionId": "routing.offence",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.traffic-blocked",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.victims-status",
+            "optionIds": [
+              "NONE"
+            ]
+          }
+        ]
+      },
+      "address": {
+        "displayAddress": "Учебный адрес, дом 1"
+      },
+      "description": "Учебный пример: ДТП без пострадавших",
+      "victims": {
+        "present": false
+      }
+    }
+  },
+  "rubric": {
+    "criteria": [
+      {
+        "code": "SIGNS",
+        "description": "Выбраны признаки из каталога",
+        "weight": 1,
+        "critical": true
+      }
+    ]
+  }
+}

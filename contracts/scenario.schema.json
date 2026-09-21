@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sirena112.local/schemas/scenario.schema.json",
   "title": "Sirena-112 training scenario",
-  "description": "Версия 0.2: исходные данные оператора отделены от результата классификации Core.",
+  "description": "Версия 0.3: каталог сохраняет отсутствующие значения и несколько главных служб.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "version", "title", "category", "difficulty", "profile", "groundTruth", "rubric"],
@@ -174,7 +174,7 @@
       "additionalProperties": false,
       "required": [
         "classifierVersion", "classifierCode", "incidentType", "ekp35IncidentType",
-        "responseScenarioCode", "mainService", "requiredServices", "expectedInput"
+        "responseScenarioCode", "responseScenarioStatus", "mainServices", "requiredServices", "expectedInput"
       ],
       "properties": {
         "classifierVersion": { "type": "string", "minLength": 1 },
@@ -184,12 +184,12 @@
           "description": "Код комбинации признаков, а не текстовый ЕКП-35."
         },
         "incidentType": { "type": "string", "minLength": 1 },
-        "ekp35IncidentType": { "type": "string", "minLength": 1 },
-        "responseScenarioCode": { "type": "string", "minLength": 1 },
-        "mainService": { "$ref": "#/$defs/serviceRef" },
+        "ekp35IncidentType": { "type": ["string", "null"], "minLength": 1 },
+        "responseScenarioCode": { "type": ["string", "null"], "minLength": 1 },
+        "responseScenarioStatus": { "enum": ["CODE", "MISSING", "EXPLICIT_NONE", "SOURCE_LABEL"] },
+        "mainServices": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/serviceRef" } },
         "requiredServices": {
           "type": "array",
-          "minItems": 1,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/routedService" }
         },
@@ -201,6 +201,7 @@
       "description": "Переходная форма ground truth версии 0.1. Допустима только до завершения задачи #35; новые сценарии должны использовать groundTruthV2.",
       "additionalProperties": true,
       "required": ["incidentType", "requiredServices"],
+      "not": { "required": ["classifierVersion"] },
       "properties": {
         "incidentType": { "type": "string", "minLength": 1 },
         "ekpCode": { "type": "string", "pattern": "^[0-9]{6,9}$" },

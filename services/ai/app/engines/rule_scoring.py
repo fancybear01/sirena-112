@@ -1,33 +1,36 @@
-"""Оценка учебной сессии сравнением с эталоном.
+"""Оценка учебной сессии по эталону классификатора.
 
-Каждый критерий рубрики проверяется отдельной функцией. Проверка возвращает
-долю выполнения от нуля до единицы и человеческое объяснение, чего не хватило.
-Частичное выполнение считается честно: выбрал три службы из четырёх - это не
-полный провал, а три четверти баллов.
+Что изменилось по сравнению с прежней версией: оценивается не введённая
+строка с типом происшествия, а то, что оператор действительно делает -
+выбирает признаки в опросной карте, отвечает на обязательные вопросы,
+собирает адрес, фиксирует пострадавших и описывает обстоятельства.
 
-Критерии про общение с заявителем проверяются по транскрипту тем же словарём
-вопросов, который в диалоге управляет поведением абонента. Один и тот же
-разбор реплик работает в обе стороны: вчера он решал, что абоненту отвечать,
-сегодня - задал ли оператор нужный вопрос.
+Тип происшествия и список служб оператор не вводит: их вычисляет Core
+по каталогу. Поэтому AI ничего не маршрутизирует сам, а сравнивает расчёт
+Core по карточке обучающегося с расчётом, записанным в эталоне сценария.
 
-Разделение штрафов и критериев: критерии показывают качество работы, штрафы -
-нарушение жёстких нормативов. Одна и та же ошибка не должна наказываться
-дважды, поэтому норматив времени живёт только в штрафах.
+Ошибки разделены по источнику. Ошибка оператора снижает оценку и может
+закрыть зачёт. Неполнота эталона или расхождение версий каталога - это
+вопрос к данным, а не к обучающемуся, и в вину ему не ставится.
 
 Оценка детерминирована: одинаковый запрос даёт побайтово одинаковый отчёт.
 """
 
-from typing import Callable, Dict, List, NamedTuple, Optional
+import re
+from typing import Callable, Dict, List, NamedTuple, Optional, Set
 
+from app.catalog import load_catalog
 from app.config import SERVICE_VERSION
 from app.engines.address_match import compare as compare_address
-from app.engines.question_intents import match_question, match_tone
+from app.engines.question_intents import match_tone
+from app.engines.rubric import ensure_rubric
 from app.schemas.common import ResponseMeta
 from app.schemas.dialogue import SpeakerRole
-from app.schemas.scenario import RubricCriterion
+from app.schemas.scenario import RubricCriterion, ResponseScenarioStatus
 from app.schemas.scoring import (
     CriterionResult,
     CriterionStatus,
+    ErrorKind,
     Penalty,
     ScoreRequest,
     ScoreResponse,
@@ -44,25 +47,27 @@ NOT_TRANSFERABLE_PENALTY_POINTS = 20.0
 # Ниже этой доли адрес считается не найденным, а не частично верным.
 ADDRESS_PARTIAL_FLOOR = 0.5
 
-# Поля, без которых карточка не имеет смысла.
-REQUIRED_CARD_FIELDS = (
-    ("incidentType", "тип происшествия"),
-    ("signs", "признаки происшествия"),
-    ("address", "адрес"),
-    ("requiredServices", "список оповещения"),
+# Вычисляемые поля не имеют права приходить от клиента: их считает Core.
+FORBIDDEN_INPUT_KEYS = (
+    "classifierCode",
+    "incidentType",
+    "ekp35IncidentType",
+    "requiredServices",
+    "mainServices",
+    "responseScenarioCode",
 )
 
-# Без этих полей карточку невозможно передать в службу.
-TRANSFER_CRITICAL_FIELDS = ("address", "incidentType")
+_WORDS = re.compile(r"[^а-яa-z0-9]+")
+# Короткие слова и служебные части речи не несут обстоятельств.
+STOP_WORDS = {"это", "или", "для", "над", "под", "при", "без", "что", "как", "там"}
 
 
 class CheckResult(NamedTuple):
     """Доля выполнения критерия и объяснение, чего не хватило.
 
-    Доля None означает, что критерий проверить нечем. Так бывает в карточном
-    режиме, где звонка нет вообще: наказывать за непредставление там, где
-    оператор физически не говорил, нельзя. Такой критерий не участвует
-    в распределении баллов.
+    Доля None означает, что критерий проверить нечем: например, в карточном
+    режиме нет разговора, а без расчёта Core нечем сверять службы. Такой
+    критерий не участвует в распределении баллов.
     """
 
     share: Optional[float]
@@ -73,12 +78,26 @@ NOT_APPLICABLE = CheckResult(None, "")
 
 
 def _text(value: Optional[str]) -> str:
-    """Приводит строку к виду, пригодному для сравнения."""
     return (value or "").strip().lower().replace("ё", "е")
 
 
-def _operator_lines(request: ScoreRequest) -> List[str]:
-    return [turn.text for turn in request.transcript if turn.role == SpeakerRole.OPERATOR]
+def _significant_words(text: str) -> Set[str]:
+    """Значимые слова описания: без коротких и служебных."""
+    return {
+        word
+        for word in _WORDS.sub(" ", _text(text)).split()
+        if len(word) > 3 and word not in STOP_WORDS
+    }
+
+
+def _labels(sign_ids: List[str]) -> str:
+    catalog = load_catalog()
+    return ", ".join(catalog.sign_label(s) if catalog else s for s in sign_ids)
+
+
+def _question_labels(question_ids: List[str]) -> str:
+    catalog = load_catalog()
+    return ", ".join(catalog.question_label(q) if catalog else q for q in question_ids)
 
 
 # --- проверки отдельных критериев ---------------------------------------------
@@ -89,35 +108,82 @@ def check_greeting(request: ScoreRequest) -> CheckResult:
     if not request.transcript:
         return NOT_APPLICABLE
 
-    for line in _operator_lines(request):
-        if "GREETING" in match_tone(line):
+    for turn in request.transcript:
+        if turn.role == SpeakerRole.OPERATOR and "GREETING" in match_tone(turn.text):
             return CheckResult(1.0, "")
     return CheckResult(0.0, "в разговоре нет представления службы")
 
 
-def check_victims(request: ScoreRequest) -> CheckResult:
-    """Уточнил ли оператор наличие пострадавших."""
-    if not request.transcript:
+def check_signs(request: ScoreRequest) -> CheckResult:
+    """Сравнивает выбранный путь признаков с эталонным.
+
+    Признаки - главное действие оператора: из их комбинации каталог выводит
+    и тип происшествия, и список служб.
+    """
+    expected_incident = request.scenario.ground_truth.expected_input.incident
+    expected = list(expected_incident.selected_sign_ids) if expected_incident else []
+    if not expected:
         return NOT_APPLICABLE
 
-    for line in _operator_lines(request):
-        if match_question(line) == "VICTIMS":
-            return CheckResult(1.0, "")
-    return CheckResult(0.0, "вопрос о пострадавших не задан")
+    incident = request.submitted_card.incident
+    actual = set(incident.selected_sign_ids) if incident else set()
+    missing = [s for s in expected if s not in actual]
+    extra = sorted(actual - set(expected))
+
+    share = round(max(0.0, (len(expected) - len(missing) - len(extra)) / len(expected)), 3)
+
+    notes = []
+    if missing:
+        notes.append("не выбрано: {names}".format(names=_labels(missing)))
+    if extra:
+        notes.append("лишнее: {names}".format(names=_labels(extra)))
+    return CheckResult(share, "; ".join(notes))
+
+
+def check_questions(request: ScoreRequest) -> CheckResult:
+    """Проверяет ответы на обязательные вопросы опросной карты.
+
+    Неотвеченный вопрос и ответ, отличный от эталонного, - разные ошибки:
+    первый означает, что оператор не уточнил, второй - что уточнил и понял
+    иначе. От ответа зависит список служб, поэтому оба важны.
+    """
+    expected_incident = request.scenario.ground_truth.expected_input.incident
+    expected = list(expected_incident.answers) if expected_incident else []
+    if not expected:
+        return NOT_APPLICABLE
+
+    incident = request.submitted_card.incident
+    actual = {answer.question_id: answer for answer in (incident.answers if incident else [])}
+
+    unanswered, different = [], []
+    for answer in expected:
+        given = actual.get(answer.question_id)
+        if given is None:
+            unanswered.append(answer.question_id)
+        elif sorted(given.option_ids) != sorted(answer.option_ids):
+            different.append(answer.question_id)
+
+    share = round((len(expected) - len(unanswered) - len(different)) / len(expected), 3)
+
+    notes = []
+    if unanswered:
+        notes.append("не уточнено: {names}".format(names=_question_labels(unanswered)))
+    if different:
+        notes.append("ответ отличается от эталона: {names}".format(names=_question_labels(different)))
+    return CheckResult(share, "; ".join(notes))
 
 
 def check_address(request: ScoreRequest) -> CheckResult:
     """Сравнивает адрес по значимым частям, не придираясь к сокращениям."""
-    expected = request.scenario.ground_truth.address
-    if not expected:
-        return CheckResult(1.0, "")
+    expected_address = request.scenario.ground_truth.expected_input.address
+    if expected_address is None:
+        return NOT_APPLICABLE
 
-    # Пустое поле и неверное значение - разные ошибки, и преподаватель должен
-    # видеть разницу: во втором случае человек хотя бы пытался.
-    if not request.submitted_card.address:
+    actual = request.submitted_card.address
+    if actual is None or not actual.display_address:
         return CheckResult(0.0, "адрес не заполнен")
 
-    match = compare_address(expected, request.submitted_card.address)
+    match = compare_address(expected_address.display_address, actual.display_address)
     if match.share >= 1.0:
         return CheckResult(1.0, "")
     if match.share < ADDRESS_PARTIAL_FLOOR:
@@ -125,119 +191,231 @@ def check_address(request: ScoreRequest) -> CheckResult:
     return CheckResult(match.share, "не указано: {parts}".format(parts=", ".join(match.missing)))
 
 
-def check_signs(request: ScoreRequest) -> CheckResult:
-    """Сравнивает формализованные признаки по уровням."""
-    expected = request.scenario.ground_truth.signs
+def check_victims(request: ScoreRequest) -> CheckResult:
+    """Зафиксированы ли пострадавшие и угроза людям."""
+    expected = request.scenario.ground_truth.expected_input.victims
     if expected is None:
-        return CheckResult(1.0, "")
+        return NOT_APPLICABLE
 
-    actual = request.submitted_card.signs
+    actual = request.submitted_card.victims
     if actual is None:
-        return CheckResult(0.0, "признаки происшествия не выбраны")
+        return CheckResult(0.0, "сведения о пострадавших не заполнены")
 
-    levels = [
-        ("первого уровня", expected.level1, actual.level1),
-        ("второго уровня", expected.level2, actual.level2),
-        ("третьего уровня", expected.level3, actual.level3),
-    ]
-    checked = [(name, want, got) for name, want, got in levels if want]
-
-    wrong = [
-        "признак {name} должен быть «{want}», выбран «{got}»".format(
-            name=name, want=want, got=got or "не выбран"
+    wrong = []
+    if actual.present != expected.present:
+        wrong.append(
+            "пострадавшие: в эталоне {want}, в карточке {got}".format(
+                want="есть" if expected.present else "нет",
+                got="есть" if actual.present else "нет",
+            )
         )
-        for name, want, got in checked
-        if _text(want) != _text(got)
-    ]
-    share = round((len(checked) - len(wrong)) / len(checked), 3)
-    return CheckResult(share, "; ".join(wrong))
+    if expected.threat_to_people is not None and actual.threat_to_people != expected.threat_to_people:
+        wrong.append("не зафиксирована угроза людям")
+
+    checked = 1 + (1 if expected.threat_to_people is not None else 0)
+    return CheckResult(round((checked - len(wrong)) / checked, 3), "; ".join(wrong))
 
 
-def check_incident_type(request: ScoreRequest) -> CheckResult:
-    """Итоговый тип происшествия должен совпасть с эталоном точно."""
-    expected = request.scenario.ground_truth.incident_type
-    actual = request.submitted_card.incident_type
-    if _text(expected) == _text(actual):
-        return CheckResult(1.0, "")
+def check_description(request: ScoreRequest) -> CheckResult:
+    """Содержит ли описание существенные обстоятельства.
+
+    Сравниваются значимые слова, а не текст целиком: оператор вправе написать
+    своими словами, лишь бы обстоятельства были на месте.
+    """
+    expected = request.scenario.ground_truth.expected_input.description
+    if not expected:
+        return NOT_APPLICABLE
+
+    actual = request.submitted_card.description
     if not actual:
-        return CheckResult(0.0, "тип происшествия не выбран")
+        return CheckResult(0.0, "описание не заполнено")
+
+    wanted = _significant_words(expected)
+    if not wanted:
+        return CheckResult(1.0, "")
+
+    missing = sorted(wanted - _significant_words(actual))
+    share = round((len(wanted) - len(missing)) / len(wanted), 3)
+    detail = "в описании не отражено: {words}".format(words=", ".join(missing)) if missing else ""
+    return CheckResult(share, detail)
+
+
+def check_classification(request: ScoreRequest) -> CheckResult:
+    """Совпал ли код классификатора, вычисленный Core, с эталонным.
+
+    Сравниваются коды, а не текстовые названия: одно и то же происшествие
+    в разных классификаторах называется по-разному.
+    """
+    if request.calculation is None:
+        return NOT_APPLICABLE
+
+    expected = request.scenario.ground_truth.classifier_code
+    actual = request.calculation.classifier_code
+    if actual == expected:
+        return CheckResult(1.0, "")
+    if actual is None:
+        return CheckResult(0.0, "по выбранным признакам происшествие не определилось")
     return CheckResult(
         0.0,
-        "выбран тип «{got}», в эталоне «{want}»".format(got=actual, want=expected),
+        "определилось происшествие {got}, ожидалось {want}".format(got=actual, want=expected),
     )
 
 
 def check_services(request: ScoreRequest) -> CheckResult:
-    """Сравнивает список оповещения: чего не хватает и что лишнее.
+    """Сравнивает список оповещения, вычисленный Core, с эталонным.
 
-    Сравнение идёт по приведённым названиям, а в объяснении показываются
-    исходные: преподаватель должен видеть службу так, как она называется.
+    Оператор службы не выбирает - они следуют из признаков и ответов.
+    Поэтому расхождение здесь всегда следствие ошибки в опросной карте,
+    и объяснение указывает, каких служб не хватило.
     """
-    expected = {_text(name): name for name in request.scenario.ground_truth.required_services}
-    if not expected:
-        return CheckResult(1.0, "")
+    if request.calculation is None:
+        return NOT_APPLICABLE
 
-    actual = {_text(name): name for name in request.submitted_card.required_services}
+    expected = {service.id: service.display_name for service in request.scenario.ground_truth.required_services}
+    if not expected:
+        return NOT_APPLICABLE
+
+    actual = {service.id: service.display_name for service in request.calculation.services}
     missing = sorted(expected[key] for key in set(expected) - set(actual))
     extra = sorted(actual[key] for key in set(actual) - set(expected))
     hit = len(set(expected) & set(actual))
 
-    # Лишняя служба - тоже ошибка: её зря поднимут по тревоге.
     share = round(max(0.0, (hit - len(extra)) / len(expected)), 3)
 
     notes = []
     if missing:
-        notes.append("не выбрано: {names}".format(names=", ".join(missing)))
+        notes.append("не оповещены: {names}".format(names=", ".join(missing)))
     if extra:
-        notes.append("лишнее: {names}".format(names=", ".join(extra)))
+        notes.append("оповещены лишние: {names}".format(names=", ".join(extra)))
     return CheckResult(share, "; ".join(notes))
 
 
 CHECKERS: Dict[str, Callable[[ScoreRequest], CheckResult]] = {
     "GREETING": check_greeting,
-    "VICTIMS": check_victims,
-    "ADDRESS": check_address,
     "SIGNS": check_signs,
-    "INCIDENT_TYPE": check_incident_type,
+    "QUESTIONS": check_questions,
+    "ADDRESS": check_address,
+    "VICTIMS": check_victims,
+    "DESCRIPTION": check_description,
+    "CLASSIFICATION": check_classification,
     "SERVICES": check_services,
 }
 
 RECOMMENDATION_BY_CODE: Dict[str, str] = {
     "GREETING": "Начинайте разговор с представления: служба, фамилия, номер рабочего места.",
-    "VICTIMS": "Всегда спрашивайте о пострадавших, даже если заявитель о них не упомянул.",
+    "SIGNS": "Выбирайте признаки последовательно по опросной карте: из них следует тип происшествия.",
+    "QUESTIONS": "Отвечайте на все уточняющие вопросы карты: от них зависит состав служб.",
     "ADDRESS": "Уточняйте адрес до корпуса и подъезда и повторяйте его заявителю вслух.",
-    "SIGNS": "Выбирайте признаки по опросной карте: тип происшествия следует из них.",
-    "INCIDENT_TYPE": "Сверяйте итоговый тип с выбранными признаками перед сохранением.",
-    "SERVICES": "Проверяйте список оповещения по типу происшествия, лишние службы тоже ошибка.",
+    "VICTIMS": "Всегда уточняйте наличие пострадавших и угрозу людям, даже если заявитель молчит об этом.",
+    "DESCRIPTION": "Записывайте в описание обстоятельства, которых нет среди признаков.",
+    "CLASSIFICATION": "Проверьте выбранные признаки: происшествие определилось не то.",
+    "SERVICES": "Состав служб зависит от признаков и ответов, проверьте их перед отправкой.",
 }
 
-UNCHECKED_RECOMMENDATION = (
-    "Критерий «{code}» автоматически не проверяется, оцените его вручную."
-)
+UNCHECKED_RECOMMENDATION = "Критерий «{code}» автоматически не проверяется, оцените его вручную."
 
 CARD_FIELD_BY_CODE: Dict[str, str] = {
-    "ADDRESS": "address",
-    "INCIDENT_TYPE": "incidentType",
-    "SIGNS": "signs",
-    "SERVICES": "requiredServices",
+    "SIGNS": "incident.selectedSignIds",
+    "QUESTIONS": "incident.answers",
+    "ADDRESS": "address.displayAddress",
+    "VICTIMS": "victims",
+    "DESCRIPTION": "description",
 }
+
+
+# --- проблемы эталона, а не обучающегося --------------------------------------
+
+
+def _ground_truth_errors(request: ScoreRequest) -> List[ScoringError]:
+    """Находит расхождения и пробелы в исходных данных занятия."""
+    errors: List[ScoringError] = []
+    truth = request.scenario.ground_truth
+    catalog_version = load_catalog().version if load_catalog() else ""
+
+    if catalog_version and truth.classifier_version != catalog_version:
+        errors.append(
+            ScoringError(
+                code="CLASSIFIER_VERSION_MISMATCH",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.MAJOR,
+                message=(
+                    "Сценарий собран по версии классификатора {scenario}, "
+                    "а сервис загрузил {catalog}. Оценку нужно перепроверить."
+                ).format(scenario=truth.classifier_version, catalog=catalog_version),
+            )
+        )
+
+    if request.calculation is None:
+        errors.append(
+            ScoringError(
+                code="CALCULATION_MISSING",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.MAJOR,
+                message=(
+                    "Расчёт Core по карточке не передан, поэтому происшествие "
+                    "и список служб не проверялись."
+                ),
+            )
+        )
+    elif request.calculation.classifier_version != truth.classifier_version:
+        errors.append(
+            ScoringError(
+                code="CALCULATION_VERSION_MISMATCH",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.MAJOR,
+                message=(
+                    "Core считал по версии {core}, а эталон собран по {scenario}."
+                ).format(
+                    core=request.calculation.classifier_version,
+                    scenario=truth.classifier_version,
+                ),
+            )
+        )
+
+    if truth.response_scenario_status == ResponseScenarioStatus.MISSING:
+        errors.append(
+            ScoringError(
+                code="RESPONSE_SCENARIO_MISSING",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.MINOR,
+                message="В классификаторе у этого происшествия нет сценария реагирования.",
+            )
+        )
+
+    if not truth.required_services:
+        errors.append(
+            ScoringError(
+                code="REQUIRED_SERVICES_EMPTY",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.MAJOR,
+                message="В эталоне нет ни одной службы, состав оповещения проверить нечем.",
+            )
+        )
+
+    forbidden = sorted(key for key in FORBIDDEN_INPUT_KEYS if key in request.submitted_card.extra_facts)
+    if forbidden:
+        errors.append(
+            ScoringError(
+                code="CALCULATED_FIELDS_SUBMITTED",
+                kind=ErrorKind.GROUND_TRUTH,
+                severity=Severity.CRITICAL,
+                message=(
+                    "В карточке пришли вычисляемые поля: {names}. Их считает Core, "
+                    "клиент подменять их не может."
+                ).format(names=", ".join(forbidden)),
+                field="facts",
+            )
+        )
+
+    return errors
 
 
 # --- сборка отчёта ------------------------------------------------------------
 
 
-def _distribute_points(
-    criteria: List[RubricCriterion], scored: List[bool]
-) -> List[float]:
-    """Делит сто баллов между критериями, которые удалось проверить.
-
-    Непроверенный критерий получает ноль: он не должен ни завышать оценку,
-    ни занижать её. Остаток от округления уходит последнему проверенному,
-    поэтому сумма всегда равна ровно ста.
-    """
-    total_weight = sum(
-        criterion.weight for criterion, ok in zip(criteria, scored) if ok
-    )
+def _distribute_points(criteria: List[RubricCriterion], scored: List[bool]) -> List[float]:
+    """Делит сто баллов между критериями, которые удалось проверить."""
+    total_weight = sum(criterion.weight for criterion, ok in zip(criteria, scored) if ok)
     if total_weight <= 0:
         return [0.0] * len(criteria)
 
@@ -262,47 +440,20 @@ def _severity(criterion: RubricCriterion, status: CriterionStatus) -> Severity:
     return Severity.MAJOR if status == CriterionStatus.FAILED else Severity.MINOR
 
 
-def _completeness_errors(request: ScoreRequest, covered: set) -> List[ScoringError]:
-    """Проверяет, что обязательные поля карточки вообще заполнены.
-
-    Поля, для которых в рубрике есть свой критерий, здесь пропускаются: о них
-    уже сказано в разборе критерия, и повторять это второй раз значит засорять
-    отчёт, который преподаватель должен прочитать целиком.
-    """
-    card = request.submitted_card
-    filled = {
-        "incidentType": bool(card.incident_type),
-        "signs": card.signs is not None,
-        "address": bool(card.address),
-        "requiredServices": bool(card.required_services),
-    }
-    return [
-        ScoringError(
-            code="CARD_FIELD_EMPTY",
-            severity=Severity.MAJOR,
-            message="Не заполнено обязательное поле карточки: {title}.".format(title=title),
-            field=field,
-        )
-        for field, title in REQUIRED_CARD_FIELDS
-        if not filled[field] and field not in covered
-    ]
-
-
 def _penalties(request: ScoreRequest) -> List[Penalty]:
     """Нарушения жёстких нормативов, не покрытые критериями рубрики."""
     result: List[Penalty] = []
     card = request.submitted_card
 
-    empty_critical = [
-        field for field in TRANSFER_CRITICAL_FIELDS if not getattr(card, _attr(field))
-    ]
-    if empty_critical:
+    no_address = card.address is None or not card.address.display_address
+    no_signs = card.incident is None or not card.incident.selected_sign_ids
+    if no_address or no_signs:
         result.append(
             Penalty(
                 code="CARD_NOT_TRANSFERABLE",
                 message=(
-                    "Карточку невозможно передать в службу: не заполнено обязательное "
-                    "поле. Реагирование не начнётся."
+                    "Карточку невозможно передать в службу: без адреса или признаков "
+                    "происшествия реагирование не начнётся."
                 ),
                 points=NOT_TRANSFERABLE_PENALTY_POINTS,
             )
@@ -322,20 +473,19 @@ def _penalties(request: ScoreRequest) -> List[Penalty]:
     return result
 
 
-def _attr(field: str) -> str:
-    """Имя поля модели по имени поля в JSON."""
-    return {"address": "address", "incidentType": "incident_type"}[field]
-
-
 def score(request: ScoreRequest) -> ScoreResponse:
-    """Считает объяснимый отчёт по рубрике сценария."""
-    criteria = request.scenario.rubric.criteria
+    """Считает объяснимый отчёт по рубрике сценария.
+
+    Сценарий может прийти от Core с рубрикой-заглушкой из импорта. В этом
+    случае берётся минимальный набор критериев: иначе отчёт будет формально
+    верным, но разбирать в нём нечего.
+    """
+    criteria = ensure_rubric(request.scenario).rubric.criteria
 
     # Сначала проверяем всё, и только потом делим баллы: до проверки неизвестно,
     # какие критерии вообще применимы к этому занятию.
     checks = [
-        CHECKERS.get(criterion.code, lambda _: NOT_APPLICABLE)(request)
-        for criterion in criteria
+        CHECKERS.get(criterion.code, lambda _: NOT_APPLICABLE)(request) for criterion in criteria
     ]
     scored = [check.share is not None for check in checks]
     max_points = _distribute_points(criteria, scored)
@@ -375,6 +525,7 @@ def score(request: ScoreRequest) -> ScoreResponse:
             errors.append(
                 ScoringError(
                     code="CRITERION_{code}".format(code=criterion.code),
+                    kind=ErrorKind.OPERATOR,
                     severity=_severity(criterion, status),
                     message="{description}: {detail}.".format(
                         description=criterion.description, detail=check.detail
@@ -392,33 +543,27 @@ def score(request: ScoreRequest) -> ScoreResponse:
                 )
             )
 
-    covered = {
-        CARD_FIELD_BY_CODE[criterion.code]
-        for criterion in criteria
-        if criterion.code in CARD_FIELD_BY_CODE
-    }
-    errors.extend(_completeness_errors(request, covered))
+    errors.extend(_ground_truth_errors(request))
     penalties = _penalties(request)
-
-    if any(penalty.code == "CARD_NOT_TRANSFERABLE" for penalty in penalties):
-        errors.append(
-            ScoringError(
-                code="CARD_NOT_TRANSFERABLE",
-                severity=Severity.CRITICAL,
-                message="Карточка не может быть передана в службу: нет адреса или типа происшествия.",
-            )
-        )
 
     earned = sum(result.earned_points for result in results)
     lost = sum(penalty.points for penalty in penalties)
     total = round(max(0.0, earned - lost), 2)
-    has_critical = any(error.severity == Severity.CRITICAL for error in errors)
+
+    # Зачёт закрывают только ошибки обучающегося. Проблемы эталона видны
+    # в отчёте, но в вину ему не ставятся.
+    blocking = any(
+        error.severity == Severity.CRITICAL and error.kind == ErrorKind.OPERATOR
+        for error in errors
+    )
 
     return ScoreResponse(
         session_id=request.session_id,
+        scenario_id=str(request.scenario.id),
+        classifier_version=request.scenario.ground_truth.classifier_version,
         total_score=total,
         max_score=MAX_SCORE,
-        passed=total >= PASS_THRESHOLD and not has_critical,
+        passed=total >= PASS_THRESHOLD and not blocking,
         criteria=results,
         errors=errors,
         penalties=penalties,

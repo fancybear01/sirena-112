@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import ru.sirena112.core.classifier.CardFormDefinition
 import java.util.UUID
 
 @RestController
@@ -38,6 +39,10 @@ class StudentCardController(private val facade: CardTrainingFacade) {
     @GetMapping("/{sessionId}")
     fun get(@PathVariable sessionId: UUID): SessionView = facade.get(sessionId)
 
+    /** Форма для текущего черновика: допустимые признаки и зависимые вопросы. */
+    @GetMapping("/{sessionId}/card-form")
+    fun cardForm(@PathVariable sessionId: UUID): CardFormDefinition = facade.cardForm(sessionId)
+
     @PatchMapping("/{sessionId}/card")
     fun saveCard(
         @PathVariable sessionId: UUID,
@@ -46,7 +51,10 @@ class StudentCardController(private val facade: CardTrainingFacade) {
 
     @PostMapping("/{sessionId}/submit")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    fun submit(@PathVariable sessionId: UUID): SessionReport = facade.submit(sessionId)
+    fun submit(
+        @PathVariable sessionId: UUID,
+        @RequestBody request: SubmitCardRequest
+    ): SessionReport = facade.submit(sessionId, request)
 }
 
 data class ScenarioResponse(
@@ -73,4 +81,16 @@ data class ScenarioResponse(
             rubric = scenario.rubric
         )
     }
+}
+
+data class StudentAssignmentResponse(
+    val scenario: ScenarioResponse,
+    val session: SessionView
+)
+
+@RestController
+@RequestMapping("/api/student")
+class StudentAssignmentController(private val facade: CardTrainingFacade) {
+    @GetMapping("/assignments")
+    fun assignments(): List<StudentAssignmentResponse> = facade.assignments()
 }

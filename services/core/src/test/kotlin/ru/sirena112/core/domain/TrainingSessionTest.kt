@@ -5,6 +5,12 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import ru.sirena112.core.classifier.AddressInput
+import ru.sirena112.core.classifier.OperatorCardInput
+import ru.sirena112.core.classifier.ResponseScenarioStatus
+import ru.sirena112.core.classifier.RoutedService
+import ru.sirena112.core.classifier.RoutingReason
+import ru.sirena112.core.classifier.ServiceRef
 import java.time.Instant
 import java.util.UUID
 
@@ -59,13 +65,43 @@ class TrainingSessionTest {
     @Test
     fun `card can be updated only before completion`() {
         val session = TrainingSession(UUID.randomUUID(), scenario(), SessionMode.CARD).markReady()
-        val card = OperatorCard(incidentType = "Пожар", address = "Москва")
+        val card = OperatorCard(input = OperatorCardInput(address = AddressInput("Москва")))
 
         session.updateCard(card).startCard()
         assertEquals(card, session.operatorCard)
 
         session.complete()
-        assertThrows(IllegalStateException::class.java) { session.updateCard(OperatorCard()) }
+        assertThrows(IllegalStateException::class.java) { session.updateCard(card) }
+    }
+
+    @Test
+    fun `card revision grows on update and rejects stale expectations`() {
+        val session = TrainingSession(UUID.randomUUID(), scenario(), SessionMode.CARD).markReady().startCard()
+        val card = OperatorCard(input = OperatorCardInput(address = AddressInput("Москва")))
+
+        assertEquals(0, session.cardRevision)
+        session.checkRevision(0)
+        session.updateCard(card)
+        session.updateCard(card)
+        assertEquals(2, session.cardRevision)
+
+        assertThrows(CardRevisionConflictException::class.java) { session.checkRevision(0) }
+        session.checkRevision(2)
+    }
+
+    @Test
+    fun `time limit exceeded is computed against the started session`() {
+        val session = TrainingSession(UUID.randomUUID(), scenario(), SessionMode.CARD).markReady()
+
+        assertFalse(session.timeLimitExceeded())
+        session.startCard()
+        assertFalse(session.timeLimitExceeded(java.time.Instant.now()))
+
+        val late = java.time.Instant.now().plusSeconds((session.scenario.timeLimitSeconds + 1).toLong())
+        assertTrue(session.timeLimitExceeded(late))
+        assertFalse(session.timeLimitEventEmitted)
+        session.markTimeLimitEventEmitted()
+        assertTrue(session.timeLimitEventEmitted)
     }
 
     @Test
@@ -94,10 +130,17 @@ class TrainingSessionTest {
         difficulty = Difficulty.BASIC,
         profile = "operator",
         groundTruth = GroundTruth(
+            classifierVersion = "046-2024-11-15",
+            classifierCode = "1010101",
             incidentType = "пожар",
-            ekpCode = "1010101",
-            signs = IncidentSigns("здание"),
-            requiredServices = setOf("Служба 101")
+            ekp35IncidentType = "пожар",
+            responseScenarioCode = "1_1",
+            responseScenarioStatus = ResponseScenarioStatus.CODE,
+            mainServices = listOf(ServiceRef("MCHS", "Служба 101 (МЧС)")),
+            requiredServices = listOf(
+                RoutedService("MCHS", "Служба 101 (МЧС)", listOf(RoutingReason("classifier.1010101.O", "Колонка O: пожар")))
+            ),
+            expectedInput = OperatorCardInput()
         ),
         rubric = Rubric(listOf(RubricCriterion("ADDRESS", "Адрес", 1.0)))
     )

@@ -37,11 +37,127 @@ export type IncidentSigns = {
 export type ScenarioGroundTruth = {
   incidentType: string;
   ekpCode?: string;
+  classifierVersion?: string;
+  classifierCode?: string;
+  ekp35IncidentType?: string | null;
+  responseScenarioCode?: string | null;
+  responseScenarioStatus?: 'CODE' | 'MISSING' | 'EXPLICIT_NONE' | 'SOURCE_LABEL';
   signs?: IncidentSigns;
   address?: string | null;
-  requiredServices: string[];
+  mainServices?: ServiceRef[];
+  requiredServices: Array<string | RoutedService>;
+  expectedInput?: OperatorCardInput;
   facts?: Record<string, unknown>;
   [key: string]: unknown;
+};
+
+export type PhoneNumber = {
+  value: string;
+  kind: 'AON' | 'PROVIDED' | 'ON_SCENE';
+  foreign?: boolean;
+};
+
+export type CallerInput = {
+  phoneNumbers: PhoneNumber[];
+  fullName: string | null;
+  status: 'EYEWITNESS' | 'VICTIM' | 'RELATIVE' | 'ACQUAINTANCE' | 'CHILD' | 'PARTICIPANT' | 'OTHER' | null;
+  communicationChannel: 'VOICE' | 'SMS' | 'OTHER' | null;
+  language: string | null;
+};
+
+export type QuestionAnswer = {
+  questionId: string;
+  optionIds?: string[];
+  freeText?: string | null;
+};
+
+export type IncidentInput = {
+  selectedSignIds: string[];
+  answers: QuestionAnswer[];
+};
+
+export type AddressInput = {
+  displayAddress: string;
+  region?: string | null;
+  locality?: string | null;
+  street?: string | null;
+  house?: string | null;
+  building?: string | null;
+  apartment?: string | null;
+  description?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+export type VictimsInput = {
+  present: boolean;
+  count?: number | null;
+  threatToPeople?: boolean | null;
+};
+
+export type OperatorCardInput = {
+  caller: CallerInput | null;
+  incident: IncidentInput | null;
+  address: AddressInput | null;
+  description: string | null;
+  victims: VictimsInput | null;
+  facts: Record<string, unknown>;
+};
+
+export type ServiceRef = {
+  id: string;
+  displayName: string;
+};
+
+export type RoutingReason = {
+  ruleId: string;
+  message: string;
+  matchedInputIds: string[];
+};
+
+export type RoutedService = ServiceRef & {
+  reasons: RoutingReason[];
+};
+
+export type CardCalculation = {
+  status: 'INCOMPLETE' | 'RESOLVED' | 'NO_MATCH';
+  classifierVersion: string;
+  classifierCode: string | null;
+  incidentType: string | null;
+  ekp35IncidentType: string | null;
+  responseScenarioCode: string | null;
+  responseScenarioStatus: 'CODE' | 'MISSING' | 'EXPLICIT_NONE' | 'SOURCE_LABEL' | null;
+  mainServices: ServiceRef[];
+  services: RoutedService[];
+  missingInputIds: string[];
+  explanations: string[];
+};
+
+export type SelectionOption = {
+  id: string;
+  label: string;
+};
+
+export type SignGroup = {
+  id: string;
+  label: string;
+  level: 1 | 2 | 3;
+  required: boolean;
+  options: SelectionOption[];
+};
+
+export type QuestionDefinition = {
+  id: string;
+  label: string;
+  inputType: 'SINGLE_SELECT' | 'MULTI_SELECT' | 'TEXT';
+  required: boolean;
+  options: SelectionOption[];
+};
+
+export type CardFormDefinition = {
+  classifierVersion: string;
+  signGroups: SignGroup[];
+  questions: QuestionDefinition[];
 };
 
 export type ScenarioRubricCriterion = {
@@ -69,14 +185,8 @@ export type Scenario = {
 };
 
 export type OperatorCard = {
-  incidentType: string | null;
-  signs: IncidentSigns | null;
-  address: string | null;
-  requiredServices: string[];
-  facts: {
-    description?: string;
-    [key: string]: unknown;
-  };
+  input: OperatorCardInput;
+  calculation: CardCalculation | null;
 };
 
 export type ScoreCriterion = {
@@ -95,6 +205,8 @@ export type ScoreError = {
 
 export type SessionReport = {
   sessionId: string;
+  classifierVersion?: string | null;
+  classifierCode?: string | null;
   score: number;
   maxScore: number;
   passed: boolean;
@@ -113,19 +225,20 @@ export type SessionState =
   | 'SCORED'
   | 'FAILED';
 
-// startedAt/endedAt are optional client extensions until they are described in OpenAPI.
 export type Session = {
   id: string;
   scenarioId: string;
   mode: 'CARD';
   state: SessionState;
   card: OperatorCard;
+  cardRevision: number;
   report: SessionReport | null;
   startedAt?: string | null;
   endedAt?: string | null;
+  timeLimitSeconds: number;
+  timeLimitExceeded: boolean;
 };
 
-// The assignments endpoint has no response schema yet; this is the UI-facing adapter model.
 export type StudentAssignment = {
   scenario: Scenario;
   session: Session & { startedAt: string };

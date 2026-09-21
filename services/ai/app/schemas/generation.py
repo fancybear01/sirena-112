@@ -1,8 +1,11 @@
-"""Модели запроса на генерацию сценариев.
+"""Модели запроса на подбор сценариев.
 
-Преподаватель выбирает тему занятия и сложность, сервис возвращает черновики.
+Преподаватель выбирает тему занятия и сложность, сервис возвращает подходящие
+сценарии каталога. Поля сценария при этом не переписываются: идентификаторы,
+признаки и службы должны совпадать с тем, что использует Core.
+
 Сценарий становится доступен обучающимся только после подтверждения
-преподавателем, это решение принимает Core, а не AI.
+преподавателем, и это решение принимает Core, а не AI.
 """
 
 from typing import List, Optional
@@ -15,11 +18,10 @@ from app.schemas.scenario import Category, Difficulty, Scenario
 
 class ScenarioGenerateRequest(CamelModel):
     category: Optional[Category] = None
-    difficulty: Difficulty = Difficulty.BASIC
+    difficulty: Optional[Difficulty] = None
     count: int = Field(default=1, ge=1, le=20)
-    profile: str = Field(default="ДДС района", min_length=1)
-    time_limit_seconds: int = Field(default=30, ge=1)
-    # seed фиксирует выдачу: один и тот же запрос даёт один и тот же результат.
+    # seed сдвигает начало выборки, чтобы на повторных занятиях выпадали
+    # разные сценарии. Один и тот же запрос всегда даёт один и тот же набор.
     seed: int = Field(default=0, ge=0)
 
 

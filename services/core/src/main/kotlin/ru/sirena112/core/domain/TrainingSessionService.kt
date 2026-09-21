@@ -52,11 +52,25 @@ class TrainingSessionService(
             ?: emptyMap())
     }
 
-    fun updateCard(sessionId: UUID, card: OperatorCard): TrainingSession {
+    /**
+     * Сохранение черновика с событиями классификации. События публикуются только
+     * после успешного обновления агрегата и инкремента ревизии.
+     */
+    fun updateCard(
+        sessionId: UUID,
+        card: OperatorCard,
+        events: List<Pair<SessionEventType, Map<String, Any?>>> = emptyList()
+    ): TrainingSession {
         val session = requireSession(sessionId).updateCard(card)
         sessions.save(session)
+        events.forEach { (type, payload) -> append(session, type, EventSource.CORE, payload) }
         append(session, SessionEventType.OPERATOR_CARD_UPDATED, EventSource.CORE)
         return session
+    }
+
+    /** Публикация единичного события от Core; используется для card.time_limit_exceeded. */
+    fun appendEvent(sessionId: UUID, type: SessionEventType, payload: Map<String, Any?> = emptyMap()) {
+        append(requireSession(sessionId), type, EventSource.CORE, payload)
     }
 
     /** Фиксирует отправку ответа, не меняя состояние агрегата. */

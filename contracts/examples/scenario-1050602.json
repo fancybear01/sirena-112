@@ -1,121 +1,256 @@
 {
-  "id": "0c44dd40-9423-4e58-8905-fc7b45c26dd4",
-  "version": 2,
-  "title": "Задымление в мусоропроводе жилого дома",
+  "id": "80c14c89-f2b7-527a-bd6f-268cdc3d4a11",
+  "version": 3,
+  "title": "задымление: мусоропровод",
   "category": "FIRE",
   "difficulty": "BASIC",
-  "profile": "Заявитель сообщает о дыме из мусоропровода жилого дома. На верхних этажах могут находиться люди.",
-  "timeLimitSeconds": 600,
+  "timeLimitSeconds": 30,
+  "profile": "Синтетический интеграционный пример по классификатору. задымление: мусоропровод",
   "groundTruth": {
-    "classifierVersion": "046-2024-11-15",
     "classifierCode": "1050602",
     "incidentType": "задымление: мусоропровод",
     "ekp35IncidentType": "пожар: мусоропровод",
     "responseScenarioCode": "1_9",
-    "mainService": {
-      "id": "MCHS",
-      "displayName": "Служба 101 (МЧС)"
-    },
+    "responseScenarioStatus": "CODE",
+    "classifierVersion": "046-2024-11-15",
+    "mainServices": [
+      {
+        "id": "MCHS",
+        "displayName": "Служба 101 (МЧС)"
+      }
+    ],
     "requiredServices": [
+      {
+        "id": "DGP_ARM112",
+        "displayName": "ДГП — АРМ-112",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.CL",
+            "message": "Колонка CL: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "DGP_INTEGRATION",
+        "displayName": "ДГП — интеграция",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.CK",
+            "message": "Колонка CK: задымление: мусоропровод",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "FSO",
+        "displayName": "ФСО",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.CH",
+            "message": "Колонка CH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "GKH",
+        "displayName": "Гор. Хозяйство",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.AP",
+            "message": "Колонка AP: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MAYOR",
+        "displayName": "Аппарат МЭРА",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BH",
+            "message": "Колонка BH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
       {
         "id": "MCHS",
         "displayName": "Служба 101 (МЧС)",
         "reasons": [
           {
-            "ruleId": "classifier.1050602.main-service",
-            "message": "Основная служба для комбинации «жилой дом → мусоропровод → дым».",
+            "ruleId": "classifier.1050602.O",
+            "message": "Колонка O: пожар: мусоропровод",
             "matchedInputIds": [
-              "sign.object.residential-building",
-              "sign.location.garbage-chute",
-              "sign.fire.smoke"
+              "routing.no-access"
             ]
+          }
+        ]
+      },
+      {
+        "id": "MOSBEZ",
+        "displayName": "Департамент РБиПК (ГКУ МОСБЕЗ)",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BF",
+            "message": "Колонка BF: Пожар",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MOSBEZ_ANALYTICS",
+        "displayName": "МОСБЕЗ — МКП, Аналитика",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BG",
+            "message": "Колонка BG: Пожар",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MOSOBLGAZ",
+        "displayName": "Классификатор Мособлгаз",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.AK",
+            "message": "Колонка AK: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MOSZHILINSPECTION",
+        "displayName": "Мосжилинспекция",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.CD",
+            "message": "Колонка CD: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "NTU",
+        "displayName": "ГКУ НТУ",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.CG",
+            "message": "Колонка CG: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "TERRITORIAL_OIV",
+        "displayName": "Территориальные ОИВ",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BX",
+            "message": "Колонка BX: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "TINAO",
+        "displayName": "Территориальные ОИВ ТиНАО",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BY",
+            "message": "Колонка BY: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "ZODD",
+        "displayName": "ЦОДД",
+        "reasons": [
+          {
+            "ruleId": "classifier.1050602.BD",
+            "message": "Колонка BD: пожар: мусоропровод",
+            "matchedInputIds": []
           }
         ]
       }
     ],
     "expectedInput": {
-      "caller": {
-        "phoneNumbers": [
-          {
-            "value": "+74951234567",
-            "kind": "AON",
-            "foreign": false
-          }
-        ],
-        "fullName": null,
-        "status": "EYEWITNESS",
-        "communicationChannel": "VOICE",
-        "language": "ru"
-      },
       "incident": {
         "selectedSignIds": [
-          "sign.object.residential-building",
-          "sign.location.garbage-chute",
-          "sign.fire.smoke"
+          "sign.68eaae1dc9472ce9",
+          "sign.8795ab4a7bb0d66a",
+          "sign.8b0cf230ebb8ba99"
         ],
         "answers": [
           {
-            "questionId": "victims.present",
-            "optionIds": ["option.no"]
+            "questionId": "routing.culture-listed-facility",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.evacuation",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.medical-help",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.no-access",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.offence",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.threat-to-people",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.traffic-blocked",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.victims-status",
+            "optionIds": [
+              "NONE"
+            ]
           }
         ]
       },
       "address": {
-        "displayAddress": "Москва, ул. Берзарина, д. 12",
-        "region": "Москва",
-        "locality": "Москва",
-        "street": "Берзарина",
-        "house": "12",
-        "building": null,
-        "apartment": null,
-        "description": "Дым выходит из мусоропровода в подъезде.",
-        "latitude": null,
-        "longitude": null
+        "displayAddress": "Учебный адрес, дом 1"
       },
-      "description": "Из мусоропровода в подъезде идёт густой дым, на верхних этажах могут быть люди.",
+      "description": "Учебный пример: задымление: мусоропровод",
       "victims": {
-        "present": false,
-        "count": 0,
-        "threatToPeople": true
-      },
-      "facts": {
-        "callerSafe": true
+        "present": false
       }
     }
-  },
-  "caller": {
-    "persona": "взволнованный очевидец",
-    "panic": 0.6,
-    "trust": 0.7,
-    "patience": 0.6,
-    "voice": "обычный",
-    "background": "подъезд"
   },
   "rubric": {
     "criteria": [
       {
         "code": "SIGNS",
-        "description": "Выбран полный путь признаков происшествия",
-        "weight": 0.35,
+        "description": "Выбраны признаки из каталога",
+        "weight": 1,
         "critical": true
-      },
-      {
-        "code": "ADDRESS",
-        "description": "Указан адрес происшествия",
-        "weight": 0.2,
-        "critical": true
-      },
-      {
-        "code": "VICTIMS",
-        "description": "Уточнена угроза людям и наличие пострадавших",
-        "weight": 0.2,
-        "critical": false
-      },
-      {
-        "code": "DESCRIPTION",
-        "description": "Зафиксированы существенные обстоятельства",
-        "weight": 0.25,
-        "critical": false
       }
     ]
   }

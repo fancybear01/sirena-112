@@ -9,6 +9,7 @@ from app.config import SERVICE_VERSION
 from app.web.errors import register_error_handlers
 from app.web.middleware import register_request_id
 from app.web.routes import ai_router, health_router
+from app.web.voice_routes import stream_router, voice_router
 
 
 def create_app() -> FastAPI:
@@ -22,6 +23,8 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(ai_router)
+    app.include_router(voice_router)
+    app.include_router(stream_router)
 
     return app
 

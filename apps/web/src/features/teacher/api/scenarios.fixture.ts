@@ -3,21 +3,27 @@ import type { ScenarioStatus } from './types';
 
 export const scenarioFixtures: Scenario[] = [
   {
-    id: '0c44dd40-9423-4e58-8905-fc7b45c26dd4',
-    version: 1,
-    title: 'Пожар в жилом доме',
+    id: '80c14c89-f2b7-527a-bd6f-268cdc3d4a11',
+    version: 3,
+    title: 'Задымление в мусоропроводе',
     category: 'FIRE',
     difficulty: 'BASIC',
-    profile: 'Звонок жильца о задымлении на лестничной площадке пятиэтажного дома.',
-    timeLimitSeconds: 600,
+    profile: 'Житель сообщает о дыме из мусоропровода в жилом доме. Эталон классификатора: 1050602.',
+    timeLimitSeconds: 30,
     groundTruth: {
-      incidentType: 'FIRE',
-      requiredServices: ['FIRE', 'AMBULANCE'],
+      classifierVersion: '046-2024-11-15',
+      classifierCode: '1050602',
+      incidentType: 'задымление: мусоропровод',
+      requiredServices: [{
+        id: 'MCHS',
+        displayName: 'Служба 101 (МЧС)',
+        reasons: [{ ruleId: 'classifier.1050602.O', message: 'Маршрутизация по классификатору.', matchedInputIds: [] }],
+      }],
     },
     rubric: {
       criteria: [
-        { code: 'INCIDENT_TYPE', description: 'Верно определить тип происшествия', weight: 0.4, critical: true },
-        { code: 'SERVICES', description: 'Выбрать необходимые службы', weight: 0.6 },
+        { code: 'SIGNS', description: 'Выбрать признаки из каталога', weight: 0.5, critical: true },
+        { code: 'ANSWERS', description: 'Ответить на дополнительные вопросы', weight: 0.5 },
       ],
     },
   },
@@ -62,7 +68,7 @@ export const scenarioFixtures: Scenario[] = [
 ];
 
 export const scenarioStatusFixtures: Record<string, ScenarioStatus> = {
-  '0c44dd40-9423-4e58-8905-fc7b45c26dd4': 'READY',
+  '80c14c89-f2b7-527a-bd6f-268cdc3d4a11': 'READY',
   '82cb1ba1-a23b-480c-95cd-7257e2bb687a': 'READY',
   '4a259192-58ef-465e-b584-2c27bfb51cad': 'DRAFT',
 };

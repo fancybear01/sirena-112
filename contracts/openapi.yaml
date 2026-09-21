@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sirena-112 Core API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Контракт учебной карточки Системы-112. Клиент передаёт только исходные
     сведения оператора; классификацию и маршрутизацию вычисляет Kotlin Core.
@@ -158,6 +158,65 @@ paths:
               schema: { $ref: "#/components/schemas/SessionReport" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/student/sessions/{sessionId}/service-assignments:
+    get:
+      summary: Назначения ДДС и полная история статусов
+      description: До успешной отправки карточки возвращается пустой массив. Статусы независимы от состояния сессии.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Назначения в порядке создания
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceAssignment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/service-assignments:
+    get:
+      summary: Назначения ДДС для преподавателя
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Назначения в порядке создания
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceAssignment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/mock/sessions/{sessionId}/service-assignments/{assignmentId}/status:
+    post:
+      summary: Учебное изменение статуса одной службы
+      description: |
+        Доступно только при CORE_SERVICE_ASSIGNMENT_MOCK_UPDATES_ENABLED=true.
+        Источник изменения MOCK; реального оповещения нет. Повтор eventId возвращает 409
+        без изменения истории. Время назначает Core; клиент не может его подменить.
+      parameters:
+        - { $ref: "#/components/parameters/SessionId" }
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeServiceStatusRequest" }
+            examples:
+              received:
+                value: { eventId: "eaa138be-2d41-42d3-80d0-f7c4df6a0ba2", status: RECEIVED, comment: "Получено диспетчером" }
+              refused:
+                value: { eventId: "fba138be-2d41-42d3-80d0-f7c4df6a0ba3", status: REFUSED, refusalReason: "Не наша территория" }
+      responses:
+        "200":
+          description: Обновлённое назначение с полной историей
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceAssignment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 components:
   parameters:
     SessionId:
@@ -182,6 +241,78 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ApiError" }
   schemas:
+    ServiceStatus:
+      type: string
+      enum: [ADDED, RECEIVED, ACCEPTED, RESPONDING, ARRIVED, COMPLETED, REFUSED, FAILED]
+    ChangeServiceStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [eventId, status]
+      properties:
+        eventId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ServiceStatus" }
+        comment: { type: [string, "null"], maxLength: 2000 }
+        refusalReason:
+          type: [string, "null"]
+          maxLength: 2000
+          description: Обязательная непустая причина для REFUSED; для остальных статусов только null или отсутствие поля.
+    ServiceStatusEntry:
+      type: object
+      additionalProperties: false
+      required: [eventId, sequence, fromStatus, status, timestamp, source]
+      properties:
+        eventId: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        fromStatus:
+          oneOf:
+            - { $ref: "#/components/schemas/ServiceStatus" }
+            - { type: "null" }
+        status: { $ref: "#/components/schemas/ServiceStatus" }
+        timestamp: { type: string, format: date-time }
+        source: { type: string, enum: [SYSTEM, MOCK, TEACHER, SERVICE] }
+        comment: { type: [string, "null"], maxLength: 2000 }
+        refusalReason: { type: [string, "null"], maxLength: 2000 }
+    ServiceAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, serviceId, displayName, cardRevision, status, createdAt, updatedAt, deadlineAt, history, overdue]
+      properties:
+        id: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        serviceId: { type: string, description: Стабильный ID из каталога классификатора }
+        displayName: { type: string }
+        cardRevision: { type: integer, minimum: 0 }
+        status: { $ref: "#/components/schemas/ServiceStatus" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deadlineAt: { type: string, format: date-time }
+        history:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ServiceStatusEntry" }
+        overdue:
+          type: boolean
+          description: На момент чтения срок истёк, а назначение ещё не в COMPLETED, REFUSED или FAILED. Не новый статус.
+      example:
+        id: "ad6138be-2d41-42d3-80d0-f7c4df6a0ba2"
+        sessionId: "0199d7b6-0000-7000-8000-000000000002"
+        serviceId: MCHS
+        displayName: "Служба 101 (МЧС)"
+        cardRevision: 1
+        status: ADDED
+        createdAt: "2026-09-19T00:00:00Z"
+        updatedAt: "2026-09-19T00:00:00Z"
+        deadlineAt: "2026-09-19T01:00:00Z"
+        overdue: false
+        history:
+          - eventId: "0199d7b6-0000-7000-8000-000000000004"
+            sequence: 1
+            fromStatus: null
+            status: ADDED
+            timestamp: "2026-09-19T00:00:00Z"
+            source: SYSTEM
+            comment: null
+            refusalReason: null
     CreateSessionRequest:
       type: object
       additionalProperties: false
@@ -342,7 +473,11 @@ components:
         incidentType: { type: [string, "null"] }
         ekp35IncidentType: { type: [string, "null"] }
         responseScenarioCode: { type: [string, "null"] }
-        mainService: { type: [object, "null"], allOf: [{ $ref: "#/components/schemas/ServiceRef" }] }
+        responseScenarioStatus: { type: string, enum: [CODE, MISSING, EXPLICIT_NONE, SOURCE_LABEL] }
+        mainServices:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ServiceRef" }
         services:
           type: array
           uniqueItems: true
@@ -362,16 +497,16 @@ components:
         id: { type: string, minLength: 1 }
         displayName: { type: string, minLength: 1 }
     RoutedService:
-      allOf:
-        - $ref: "#/components/schemas/ServiceRef"
-        - type: object
-          additionalProperties: false
-          required: [reasons]
-          properties:
-            reasons:
-              type: array
-              minItems: 1
-              items: { $ref: "#/components/schemas/RoutingReason" }
+      type: object
+      additionalProperties: false
+      required: [id, displayName, reasons]
+      properties:
+        id: { type: string, minLength: 1 }
+        displayName: { type: string, minLength: 1 }
+        reasons:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/RoutingReason" }
     RoutingReason:
       type: object
       additionalProperties: false
@@ -450,17 +585,20 @@ components:
     GroundTruthV2:
       type: object
       additionalProperties: false
-      required: [classifierVersion, classifierCode, incidentType, ekp35IncidentType, responseScenarioCode, mainService, requiredServices, expectedInput]
+      required: [classifierVersion, classifierCode, incidentType, ekp35IncidentType, responseScenarioCode, responseScenarioStatus, mainServices, requiredServices, expectedInput]
       properties:
         classifierVersion: { type: string, minLength: 1 }
         classifierCode: { type: string, pattern: "^[0-9]{6,9}$" }
         incidentType: { type: string, minLength: 1 }
-        ekp35IncidentType: { type: string, minLength: 1 }
-        responseScenarioCode: { type: string, minLength: 1 }
-        mainService: { $ref: "#/components/schemas/ServiceRef" }
+        ekp35IncidentType: { type: [string, "null"], minLength: 1 }
+        responseScenarioCode: { type: [string, "null"], minLength: 1 }
+        responseScenarioStatus: { type: string, enum: [CODE, MISSING, EXPLICIT_NONE, SOURCE_LABEL] }
+        mainServices:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ServiceRef" }
         requiredServices:
           type: array
-          minItems: 1
           uniqueItems: true
           items: { $ref: "#/components/schemas/RoutedService" }
         expectedInput: { $ref: "#/components/schemas/OperatorCardInput" }
@@ -469,6 +607,8 @@ components:
       description: Deprecated temporary compatibility shape for 0.1 scenario fixtures.
       additionalProperties: true
       required: [incidentType, requiredServices]
+      not:
+        required: [classifierVersion]
       properties:
         incidentType: { type: string, minLength: 1 }
         ekpCode: { type: string, pattern: "^[0-9]{6,9}$" }

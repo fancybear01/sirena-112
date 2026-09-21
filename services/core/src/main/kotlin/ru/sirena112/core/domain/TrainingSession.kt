@@ -1,5 +1,8 @@
 package ru.sirena112.core.domain
 
+import ru.sirena112.core.classifier.CardCalculation
+import ru.sirena112.core.classifier.OperatorCardInput
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -28,18 +31,23 @@ class InvalidSessionTransitionException(
     message: String = "Недопустимый переход учебной сессии $sessionId: $current -> $target"
 ) : IllegalStateException(message)
 
-/** Карточный ответ оператора. Поля названы так же, как в сценарном контракте. */
+/** Устаревшая ревизия черновика: клиент перезаписал более новые данные. */
+class CardRevisionConflictException(
+    val sessionId: UUID,
+    val expectedRevision: Int,
+    val actualRevision: Int
+) : IllegalStateException(
+    "Устаревшая ревизия карточки сессии $sessionId: ожидается $actualRevision, получено $expectedRevision"
+)
+
+/**
+ * Карточка оператора по контракту 0.3: исходные данные оператора и вычисленный
+ * Core результат. Вычисляемые поля клиенту принадлежать не могут.
+ */
 data class OperatorCard(
-    val incidentType: String? = null,
-    val signs: IncidentSigns? = null,
-    val address: String? = null,
-    val requiredServices: Set<String> = emptySet(),
-    val facts: Map<String, Any?> = emptyMap()
-) {
-    init {
-        require(requiredServices.all { it.isNotBlank() }) { "Службы в карточке не могут быть пустыми" }
-    }
-}
+    val input: OperatorCardInput = OperatorCardInput(),
+    val calculation: CardCalculation? = null
+)
 
 /**
  * Агрегат учебной сессии. Статус меняется только через доменные методы,
@@ -59,10 +67,24 @@ class TrainingSession(
     var operatorCard: OperatorCard = operatorCard
         private set
 
+    /** Растёт на каждое сохранение черновика; основа для optimistic locking. */
+    var cardRevision: Int = 0
+        private set
+
+    var startedAt: Instant? = null
+        private set
+
+    var endedAt: Instant? = null
+        private set
+
     var updatedAt: Instant = createdAt
         private set
 
     var failureReason: String? = null
+        private set
+
+    /** Событие о превышении лимита времени отправляется не более одного раза. */
+    var timeLimitEventEmitted: Boolean = false
         private set
 
     fun markReady(): TrainingSession = transition(SessionState.READY)
@@ -79,10 +101,14 @@ class TrainingSession(
 
     fun startCard(): TrainingSession {
         requireMode(SessionMode.CARD, "Карточный старт доступен только в карточном режиме")
+        startedAt = startedAt ?: Instant.now()
         return transition(SessionState.ACTIVE)
     }
 
-    fun complete(): TrainingSession = transition(SessionState.COMPLETED)
+    fun complete(): TrainingSession {
+        endedAt = endedAt ?: Instant.now()
+        return transition(SessionState.COMPLETED)
+    }
 
     fun startScoring(): TrainingSession = transition(SessionState.SCORING)
 
@@ -98,13 +124,36 @@ class TrainingSession(
         return this
     }
 
+    fun checkRevision(expectedRevision: Int?) {
+        if (expectedRevision != null && expectedRevision != cardRevision) {
+            throw CardRevisionConflictException(id, expectedRevision, cardRevision)
+        }
+    }
+
     fun updateCard(card: OperatorCard): TrainingSession {
         if (state !in CARD_UPDATE_STATES) {
             throw IllegalStateException("Карточку нельзя изменять в состоянии $state")
         }
+        checkNoBlankInput(card)
         operatorCard = card
+        cardRevision += 1
         touch()
         return this
+    }
+
+    fun timeLimitExceeded(now: Instant = Instant.now()): Boolean =
+        startedAt != null &&
+            state in setOf(SessionState.READY, SessionState.ACTIVE, SessionState.COMPLETED) &&
+            Duration.between(startedAt, now) > Duration.ofSeconds(scenario.timeLimitSeconds.toLong())
+
+    fun markTimeLimitEventEmitted() {
+        timeLimitEventEmitted = true
+    }
+
+    private fun checkNoBlankInput(card: OperatorCard) {
+        if (card.input.isEmpty() && card.calculation == null) {
+            throw IllegalArgumentException("Карточка должна содержать хотя бы одно заполненное поле")
+        }
     }
 
     private fun transition(target: SessionState): TrainingSession {

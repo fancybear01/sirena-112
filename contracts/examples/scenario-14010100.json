@@ -1,0 +1,219 @@
+{
+  "id": "92cd254b-562e-507c-a226-20120c9f9695",
+  "version": 3,
+  "title": "Массовое отключение стационарной телефонной связи",
+  "category": "UTILITY",
+  "difficulty": "BASIC",
+  "timeLimitSeconds": 30,
+  "profile": "Синтетический интеграционный пример по классификатору. Массовое отключение стационарной телефонной связи",
+  "groundTruth": {
+    "classifierCode": "14010100",
+    "incidentType": "Массовое отключение стационарной телефонной связи",
+    "ekp35IncidentType": "Аварии на системах коммуникаций",
+    "responseScenarioCode": "14_2",
+    "responseScenarioStatus": "CODE",
+    "classifierVersion": "046-2024-11-15",
+    "mainServices": [
+      {
+        "id": "MCHS",
+        "displayName": "Служба 101 (МЧС)"
+      }
+    ],
+    "requiredServices": [
+      {
+        "id": "FSO",
+        "displayName": "ФСО",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.CH",
+            "message": "Колонка CH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "GKH",
+        "displayName": "Гор. Хозяйство",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.AP",
+            "message": "Колонка AP: Карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MAYOR",
+        "displayName": "Аппарат МЭРА",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.BH",
+            "message": "Колонка BH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MCHS",
+        "displayName": "Служба 101 (МЧС)",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.O",
+            "message": "Колонка O: Аварии на электросетях",
+            "matchedInputIds": [
+              "routing.no-access"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "MGTS",
+        "displayName": "МГТС",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.AV",
+            "message": "Колонка AV: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "NTU",
+        "displayName": "ГКУ НТУ",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.CG",
+            "message": "Колонка CG: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "ODS_PSC",
+        "displayName": "ОДС ПСЦ",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.Q",
+            "message": "Колонка Q: Аварии на электросетях",
+            "matchedInputIds": [
+              "routing.no-access",
+              "routing.threat-to-people",
+              "routing.victims-status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "POLICE",
+        "displayName": "Служба 102 (МВД)",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.V",
+            "message": "Колонка V: Аварии в городском хозяйстве",
+            "matchedInputIds": [
+              "routing.offence",
+              "routing.victims-status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TERRITORIAL_OIV",
+        "displayName": "Территориальные ОИВ",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.BX",
+            "message": "Колонка BX: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "TINAO",
+        "displayName": "Территориальные ОИВ ТиНАО",
+        "reasons": [
+          {
+            "ruleId": "classifier.14010100.BY",
+            "message": "Колонка BY: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      }
+    ],
+    "expectedInput": {
+      "incident": {
+        "selectedSignIds": [
+          "sign.78f918d73b3b76a9",
+          "sign.395952e4ece614ef"
+        ],
+        "answers": [
+          {
+            "questionId": "routing.construction",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.culture-listed-facility",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.evacuation",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.medical-help",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.no-access",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.offence",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.threat-to-people",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.victims-status",
+            "optionIds": [
+              "NONE"
+            ]
+          }
+        ]
+      },
+      "address": {
+        "displayAddress": "Учебный адрес, дом 1"
+      },
+      "description": "Учебный пример: Массовое отключение стационарной телефонной связи",
+      "victims": {
+        "present": false
+      }
+    }
+  },
+  "rubric": {
+    "criteria": [
+      {
+        "code": "SIGNS",
+        "description": "Выбраны признаки из каталога",
+        "weight": 1,
+        "critical": true
+      }
+    ]
+  }
+}

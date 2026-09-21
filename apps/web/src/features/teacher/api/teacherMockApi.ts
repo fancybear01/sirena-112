@@ -16,11 +16,15 @@ type MockOptions = {
 
 function createEmptyCard(): TeacherSession['card'] {
   return {
-    incidentType: null,
-    signs: null,
-    address: null,
-    requiredServices: [],
-    facts: {},
+    input: {
+      caller: null,
+      incident: null,
+      address: null,
+      description: null,
+      victims: null,
+      facts: {},
+    },
+    calculation: null,
   };
 }
 
@@ -37,8 +41,11 @@ function isStoredSession(value: unknown): value is TeacherSession {
     && (session.state === 'ACTIVE' || session.state === 'COMPLETED')
     && typeof session.startedAt === 'string'
     && (session.endedAt === null || typeof session.endedAt === 'string')
+    && typeof session.cardRevision === 'number'
+    && typeof session.timeLimitSeconds === 'number'
+    && typeof session.timeLimitExceeded === 'boolean'
     && session.report === null
-    && Boolean(session.card && typeof session.card === 'object');
+    && Boolean(session.card && typeof session.card === 'object' && 'input' in session.card);
 }
 
 export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
@@ -112,9 +119,12 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         mode: 'CARD',
         state: 'ACTIVE',
         card: createEmptyCard(),
+        cardRevision: 0,
         report: null,
         startedAt,
         endedAt: null,
+        timeLimitSeconds: scenario.timeLimitSeconds ?? 30,
+        timeLimitExceeded: false,
       };
       try {
         storage?.removeItem(studentDraftStorageKey);
@@ -135,6 +145,10 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
         ...session,
         state: 'COMPLETED',
         endedAt: new Date().toISOString(),
+        timeLimitExceeded: Boolean(
+          session.startedAt
+          && Date.now() - Date.parse(session.startedAt) > session.timeLimitSeconds * 1000,
+        ),
       };
       persistSession(completed);
       return respond(completed);

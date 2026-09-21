@@ -1,7 +1,13 @@
-"""Модель учебного сценария.
+"""Модель учебного сценария, версия контракта 0.3.
 
-Повторяет contracts/scenario.schema.json. Любое изменение здесь должно
-сопровождаться изменением схемы в contracts, иначе тест test_contract упадёт.
+Повторяет contracts/scenario.schema.json. Ключевое отличие от прежней версии:
+оператор не вводит тип происшествия и список служб - он выбирает признаки
+и отвечает на вопросы, а классификацию и маршрутизацию вычисляет Core
+по каталогу. Поэтому в эталоне лежат и ожидаемый ввод оператора, и уже
+посчитанный результат маршрутизации.
+
+AI не вычисляет службы самостоятельно: он сравнивает то, что Core посчитал
+по карточке обучающегося, с тем, что записано в эталоне сценария.
 """
 
 from enum import Enum
@@ -14,12 +20,7 @@ from app.schemas.common import CamelModel, OpenCamelModel
 
 
 class Category(str, Enum):
-    """Группа происшествий по классификатору ГБУ «Система 112».
-
-    Двадцать три значения соответствуют группам классификатора один к одному.
-    Русское название каждой группы указано в комментарии, чтобы код можно было
-    сверить с исходным файлом классификатора без дополнительных справочников.
-    """
+    """Высокоуровневая учебная группа. Она не заменяет код классификатора."""
 
     FIRE = "FIRE"  # 1. Пожары и задымления
     ACCIDENT = "ACCIDENT"  # 2. ДТП
@@ -52,38 +53,134 @@ class Difficulty(str, Enum):
     ADVANCED = "ADVANCED"
 
 
-class IncidentSigns(CamelModel):
-    """Формализованные признаки происшествия из опросной карты АРМ-112.
+class ResponseScenarioStatus(str, Enum):
+    """Почему сценарий реагирования отсутствует, если его нет.
 
-    Оператор выбирает именно признаки, а итоговый тип происшествия и список
-    оповещения вычисляются из их комбинации по классификатору. Поэтому
-    оценивать нужно выбор признаков, а не введённое руками название типа.
+    В классификаторе часть строк не имеет кода сценария, и придумывать его
+    нельзя. Статус отличает "кода нет в источнике" от "источник явно указал,
+    что сценария не требуется".
     """
 
-    level1: str = Field(min_length=1)
-    level2: Optional[str] = None
-    level3: Optional[str] = None
-    additional: List[str] = Field(default_factory=list)
+    CODE = "CODE"
+    MISSING = "MISSING"
+    EXPLICIT_NONE = "EXPLICIT_NONE"
+    SOURCE_LABEL = "SOURCE_LABEL"
+
+
+# --- службы и объяснение маршрутизации ----------------------------------------
+
+
+class ServiceRef(CamelModel):
+    id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+
+
+class RoutingReason(CamelModel):
+    """Почему служба попала в список оповещения."""
+
+    rule_id: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    matched_input_ids: List[str] = Field(default_factory=list)
+
+
+class RoutedService(ServiceRef):
+    reasons: List[RoutingReason] = Field(min_length=1)
+
+
+# --- исходные данные, которые вводит оператор ---------------------------------
+
+
+class PhoneNumber(CamelModel):
+    value: str = Field(min_length=1, max_length=64)
+    kind: str
+    foreign: bool = False
+
+
+class CallerInput(CamelModel):
+    phone_numbers: List[PhoneNumber] = Field(default_factory=list)
+    full_name: Optional[str] = None
+    status: Optional[str] = None
+    communication_channel: Optional[str] = None
+    language: Optional[str] = None
+
+
+class QuestionAnswer(CamelModel):
+    question_id: str = Field(min_length=1)
+    option_ids: List[str] = Field(default_factory=list)
+    free_text: Optional[str] = None
+
+
+class IncidentInput(CamelModel):
+    """Выбор оператора в опросной карте: признаки и ответы на вопросы."""
+
+    selected_sign_ids: List[str] = Field(default_factory=list)
+    answers: List[QuestionAnswer] = Field(default_factory=list)
+
+
+class AddressInput(CamelModel):
+    display_address: str = Field(min_length=1, max_length=500)
+    region: Optional[str] = None
+    locality: Optional[str] = None
+    street: Optional[str] = None
+    house: Optional[str] = None
+    building: Optional[str] = None
+    apartment: Optional[str] = None
+    description: Optional[str] = None
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+
+
+class VictimsInput(CamelModel):
+    present: bool
+    count: Optional[int] = Field(default=None, ge=0)
+    threat_to_people: Optional[bool] = None
+
+
+class OperatorCardInput(CamelModel):
+    """Только исходные сведения оператора.
+
+    Код классификатора, тип происшествия и службы сюда попадать не должны:
+    это вычисляемые поля, и их считает Core.
+    """
+
+    caller: Optional[CallerInput] = None
+    incident: Optional[IncidentInput] = None
+    address: Optional[AddressInput] = None
+    description: Optional[str] = Field(default=None, max_length=1999)
+    victims: Optional[VictimsInput] = None
+    # Необязательные подробности сверх контракта. Поле именно необязательное,
+    # а не пустой словарь по умолчанию: иначе сериализация добавляла бы facts
+    # туда, где его нет, и сценарий переставал бы совпадать с общим файлом.
+    facts: Optional[Dict[str, Any]] = None
+
+    @property
+    def extra_facts(self) -> Dict[str, Any]:
+        """Подробности в виде словаря, даже если поле не заполнено."""
+        return self.facts or {}
+
+
+# --- эталон сценария ----------------------------------------------------------
 
 
 class GroundTruth(OpenCamelModel):
-    """Эталон: то, с чем сравнивается карточка обучающегося.
+    """Эталон: ожидаемый ввод оператора и посчитанный по нему результат."""
 
-    incident_type и required_services не задаются произвольно: они должны
-    соответствовать комбинации признаков в классификаторе. Пока классификатор
-    не разобран, значения проставлены вручную по его строкам.
-    """
-
-    incident_type: str
-    ekp_code: Optional[str] = Field(default=None, pattern=r"^[0-9]{6,9}$")
-    signs: Optional[IncidentSigns] = None
-    address: Optional[str] = None
-    required_services: List[str] = Field(default_factory=list)
-    facts: Dict[str, Any] = Field(default_factory=dict)
+    classifier_version: str = Field(min_length=1)
+    classifier_code: str = Field(pattern=r"^[0-9]{6,9}$")
+    incident_type: str = Field(min_length=1)
+    ekp35_incident_type: Optional[str] = None
+    response_scenario_code: Optional[str] = None
+    response_scenario_status: ResponseScenarioStatus
+    main_services: List[ServiceRef] = Field(default_factory=list)
+    required_services: List[RoutedService] = Field(default_factory=list)
+    expected_input: OperatorCardInput
 
 
 class Caller(CamelModel):
-    """Профиль звонящего и его состояние на начало разговора."""
+    """Профиль звонящего: характер и состояние, а не факты происшествия.
+
+    Факты берутся из эталона, здесь только то, как человек себя ведёт.
+    """
 
     persona: Optional[str] = None
     panic: Optional[float] = Field(default=None, ge=0, le=1)
@@ -94,10 +191,8 @@ class Caller(CamelModel):
 
 
 class RubricCriterion(CamelModel):
-    """Один критерий оценки с весом."""
-
-    code: str
-    description: str
+    code: str = Field(min_length=1)
+    description: str = Field(min_length=1)
     weight: float = Field(ge=0)
     critical: bool = False
 
@@ -107,8 +202,6 @@ class Rubric(CamelModel):
 
 
 class Scenario(CamelModel):
-    """Учебный сценарий целиком."""
-
     id: UUID
     version: int = Field(ge=1)
     title: str = Field(min_length=1)

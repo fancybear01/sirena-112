@@ -1,0 +1,43 @@
+name: media
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: media / test-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/media/go.mod
+          cache: true
+          cache-dependency-path: services/media/go.sum
+      - name: Run tests
+        working-directory: services/media
+        run: go test ./...
+      - name: Run vet
+        working-directory: services/media
+        run: go vet ./...
+      - name: Build binary
+        working-directory: services/media
+        run: go build ./cmd/media
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+      - name: Build Media image
+        run: docker build --tag sirena-media:ci services/media
+      - name: Build Asterisk image
+        run: docker compose build asterisk

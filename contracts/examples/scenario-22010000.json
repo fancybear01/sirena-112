@@ -1,0 +1,109 @@
+{
+  "id": "3fd76ecd-b5e7-579f-81e8-cd1e08b8ed0f",
+  "version": 3,
+  "title": "Аллергия",
+  "category": "MEDICAL",
+  "difficulty": "BASIC",
+  "timeLimitSeconds": 30,
+  "profile": "Синтетический интеграционный пример по классификатору. Аллергия",
+  "groundTruth": {
+    "classifierCode": "22010000",
+    "incidentType": "Аллергия",
+    "ekp35IncidentType": "Аллергия",
+    "responseScenarioCode": "22_1",
+    "responseScenarioStatus": "CODE",
+    "classifierVersion": "046-2024-11-15",
+    "mainServices": [
+      {
+        "id": "AMBULANCE",
+        "displayName": "Служба 103 (СМП)"
+      }
+    ],
+    "requiredServices": [
+      {
+        "id": "AMBULANCE",
+        "displayName": "Служба 103 (СМП)",
+        "reasons": [
+          {
+            "ruleId": "classifier.22010000.Z",
+            "message": "Колонка Z: Аллергия",
+            "matchedInputIds": [
+              "routing.victims-status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FSO",
+        "displayName": "ФСО",
+        "reasons": [
+          {
+            "ruleId": "classifier.22010000.CH",
+            "message": "Колонка CH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "MAYOR",
+        "displayName": "Аппарат МЭРА",
+        "reasons": [
+          {
+            "ruleId": "classifier.22010000.BH",
+            "message": "Колонка BH: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      },
+      {
+        "id": "NTU",
+        "displayName": "ГКУ НТУ",
+        "reasons": [
+          {
+            "ruleId": "classifier.22010000.CG",
+            "message": "Колонка CG: карточка-112",
+            "matchedInputIds": []
+          }
+        ]
+      }
+    ],
+    "expectedInput": {
+      "incident": {
+        "selectedSignIds": [
+          "sign.8a1001947d992a6f"
+        ],
+        "answers": [
+          {
+            "questionId": "routing.culture-listed-facility",
+            "optionIds": [
+              "NO"
+            ]
+          },
+          {
+            "questionId": "routing.victims-status",
+            "optionIds": [
+              "PRESENT"
+            ]
+          }
+        ]
+      },
+      "address": {
+        "displayAddress": "Учебный адрес, дом 1"
+      },
+      "description": "Учебный пример: Аллергия",
+      "victims": {
+        "present": true
+      }
+    }
+  },
+  "rubric": {
+    "criteria": [
+      {
+        "code": "SIGNS",
+        "description": "Выбраны признаки из каталога",
+        "weight": 1,
+        "critical": true
+      }
+    ]
+  }
+}
