@@ -1,0 +1,73 @@
+name: sirena-card
+
+services:
+  ai:
+    build:
+      context: .
+      dockerfile: services/ai/Dockerfile.card
+    environment:
+      AI_PORT: "8090"
+    ports:
+      - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+
+  core:
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile.card
+    environment:
+      CORE_PORT: "8080"
+      CORE_AI_BASE_URL: http://ai:8090
+      CORE_MEDIA_MODE: mock
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.card
+    environment:
+      VITE_API_MODE: api
+      VITE_PROXY_TARGET: http://core:8080
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/teacher').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+
+  smoke:
+    image: python:3.12-slim-bookworm
+    profiles: [smoke]
+    working_dir: /app
+    volumes:
+      - ./scripts/smoke_card_1050602.py:/app/scripts/smoke_card_1050602.py:ro
+      - ./contracts/examples/scenario-1050602.json:/app/contracts/examples/scenario-1050602.json:ro
+    command: ["python", "scripts/smoke_card_1050602.py", "--core", "http://core:8080", "--ai", "http://ai:8090", "--expect-ai"]
+    depends_on:
+      ai:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+

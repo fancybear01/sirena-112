@@ -1,0 +1,17 @@
+FROM eclipse-temurin:17-jdk-jammy AS build
+
+WORKDIR /app/services/core
+COPY services/core/ ./
+RUN chmod +x gradlew && ./gradlew bootJar --no-daemon && \
+    find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -exec cp {} /app/core.jar \;
+
+FROM eclipse-temurin:17-jre-jammy
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /app/services/core
+COPY --from=build /app/core.jar /app/services/core/app.jar
+COPY contracts/ /app/contracts/
+
+EXPOSE 8080
+CMD ["java", "-jar", "/app/services/core/app.jar"]
+
