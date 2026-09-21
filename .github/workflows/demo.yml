@@ -14,6 +14,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  card-compose:
+    name: demo / compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate card Compose configuration
+        run: docker compose -f compose.card.yaml config --quiet
+      - name: Build and start card demo
+        run: docker compose -f compose.card.yaml up --build --detach --wait ai core web
+      - name: Run two card sessions with AI
+        run: docker compose -f compose.card.yaml run --no-deps --rm smoke
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f compose.card.yaml logs --no-color --tail=120 ai core web
+      - name: Stop only card demo containers
+        if: always()
+        run: docker compose -f compose.card.yaml down
+
   smoke:
     name: demo / smoke
     runs-on: ubuntu-latest

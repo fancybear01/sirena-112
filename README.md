@@ -52,6 +52,9 @@
 - `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев.
 - `demo / smoke` — два полных занятия `1050602` через реальные Core и AI.
 
+Дополнительно `demo / compose` собирает и проверяет отдельный Docker Compose для
+карточного демо; пока этот новый check не добавлен в required status checks.
+
 Имена jobs уникальны между workflows. Все перечисленные check names должны быть добавлены как required status checks
 в правила защиты ветки `main`. Workflow запускаются для Pull Request и push в
 `main`, используют кэши только для зависимостей и отменяют устаревший запуск для
@@ -69,7 +72,18 @@ docker compose up -d --build asterisk media
 Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).  
 Media Gateway: [`services/media/README.md`](services/media/README.md), контракт [`contracts/media-core.md`](contracts/media-core.md).
 
-Приложения будут добавляться в Compose по мере появления рабочих Dockerfile.
+Карточное демо Core + AI + Web запускается отдельно от голосового стека одной
+командой PowerShell (Docker Desktop должен быть запущен):
+
+```powershell
+.\scripts\demo-card.ps1 start
+```
+
+После успешного smoke откройте `http://localhost:5173/teacher` и
+`http://localhost:5173/student`. Остановка: `.\scripts\demo-card.ps1 stop`.
+Команда останавливает только контейнеры `sirena-card`; данные и контейнеры
+голосового стека не затрагиваются. Подробности и запуск без Docker — в
+[`docs/demo-1050602.md`](docs/demo-1050602.md).
 
 ## Ближайшая контрольная точка
 

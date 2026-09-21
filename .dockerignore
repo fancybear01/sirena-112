@@ -1,0 +1,16 @@
+.git
+.github
+.idea
+.gradle
+**/.gradle
+**/build
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.venv
+.env
+.env.*
+!.env.example
+*.log
+
