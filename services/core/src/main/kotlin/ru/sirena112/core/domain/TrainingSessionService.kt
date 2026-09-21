@@ -73,6 +73,46 @@ class TrainingSessionService(
         append(requireSession(sessionId), type, EventSource.CORE, payload)
     }
 
+    /** Accept a Media envelope exactly once, preserving its eventId and timestamp. */
+    @Synchronized
+    fun applyMediaEvent(event: SessionEvent): Boolean {
+        val previous = events.findById(event.eventId)
+        if (previous != null) {
+            if (previous != event) throw IllegalStateException("eventId ${event.eventId} уже занят другим событием")
+            return false
+        }
+        val session = requireSession(event.sessionId)
+        if (session.mode != SessionMode.VOICE) throw IllegalStateException("Media-событие недопустимо для карточной сессии")
+
+        var started = false
+        var completed = false
+        when (event.type) {
+            SessionEventType.CALL_RINGING.value -> if (session.state == SessionState.READY) session.onCallRinging()
+            SessionEventType.CALL_ANSWERED.value -> if (session.state in setOf(SessionState.READY, SessionState.RINGING)) {
+                session.onCallAnswered()
+                started = true
+            }
+            SessionEventType.CALL_ENDED.value -> when (session.state) {
+                SessionState.READY, SessionState.RINGING -> session.fail("Звонок завершился до ответа")
+                SessionState.ACTIVE -> {
+                    session.complete()
+                    completed = true
+                }
+                else -> Unit // A late event cannot roll back a terminal session.
+            }
+            SessionEventType.MEDIA_ERROR.value, SessionEventType.SYSTEM_ERROR.value ->
+                if (session.state in setOf(SessionState.READY, SessionState.RINGING,
+                        SessionState.ACTIVE)) {
+                    session.fail(event.payload["message"]?.toString() ?: "Ошибка Media Gateway")
+                }
+        }
+        sessions.save(session)
+        check(events.saveIfAbsent(event)) { "Не удалось сохранить Media-событие ${event.eventId}" }
+        if (started) append(session, SessionEventType.SESSION_STARTED, EventSource.CORE)
+        if (completed) append(session, SessionEventType.SESSION_COMPLETED, EventSource.CORE)
+        return true
+    }
+
     /** Фиксирует отправку ответа, не меняя состояние агрегата. */
     fun submitAnswer(sessionId: UUID): TrainingSession {
         val session = requireSession(sessionId)

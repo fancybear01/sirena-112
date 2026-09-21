@@ -36,6 +36,8 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 | `call.ringing` | media | core |
 | `call.answered` | media | core |
 | `call.ended` | media | core |
+| `media.error` | media | core |
+| `media.latency` | media | core |
 | `transcript.partial` | media | core |
 | `transcript.final` | media | core |
 | `operator.speech_started` | media | core |

@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Sirena-112 Core API
-  version: 0.3.0
+  version: 0.4.0
   description: |
-    Контракт учебной карточки Системы-112. Клиент передаёт только исходные
+    Контракт карточной и голосовой сессии Системы-112. Клиент передаёт только исходные
     сведения оператора; классификацию и маршрутизацию вычисляет Kotlin Core.
     Правила совместимости описаны в contracts/README.md.
 servers:
@@ -172,6 +172,94 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/ServiceAssignment" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}:
+    get:
+      summary: Состояние учебной сессии для преподавателя
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Сессия найдена
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/call/start:
+    post:
+      summary: Начать голосовой звонок через AI и Media Gateway
+      description: Доступно только для VOICE-сессии. Создаёт AI-сессию до вызова Media; состояние учебной сессии меняется по входящим Media-событиям.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartVoiceCallRequest" }
+      responses:
+        "202":
+          description: Media принял звонок
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceCall" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/teacher/sessions/{sessionId}/call/hangup:
+    post:
+      summary: Завершить голосовой звонок в Media Gateway
+      description: Повторный запрос после завершения идемпотентен. Итоговое состояние учебной сессии фиксирует call.ended, не ответ на команду.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Команда завершения принята
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceCall" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /api/teacher/sessions/{sessionId}/call:
+    get:
+      summary: Техническое состояние звонка
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Звонок найден
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceCall" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/events:
+    get:
+      summary: Сохранённые события сессии в порядке получения
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: История событий
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SessionEvent" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /internal/v1/media/events:
+    post:
+      summary: Приём события от Media Gateway
+      description: Принимает только source=media и события голосовой сессии. Повтор eventId с тем же конвертом возвращает accepted=false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionEvent" }
+      responses:
+        "200":
+          description: Событие обработано или уже принято ранее
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaEventReceipt" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/teacher/sessions/{sessionId}/service-assignments:
     get:
       summary: Назначения ДДС для преподавателя
@@ -240,7 +328,55 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ApiError" }
+    BadGateway:
+      description: Внешний сервис нарушил контракт
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Unavailable:
+      description: AI или Media Gateway недоступен
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
   schemas:
+    StartVoiceCallRequest:
+      type: object
+      additionalProperties: false
+      required: [sipAddress]
+      properties:
+        sipAddress:
+          type: string
+          pattern: '^(PJSIP/)?[A-Za-z0-9_.-]{1,64}$'
+          example: PJSIP/1001
+    VoiceCall:
+      type: object
+      additionalProperties: false
+      required: [callId, sessionId, aiSessionId, sipAddress, state]
+      properties:
+        callId: { type: string }
+        sessionId: { type: string, format: uuid }
+        aiSessionId: { type: string }
+        sipAddress: { type: string }
+        state: { type: string, enum: [STARTING, RINGING, ACTIVE, ENDED, FAILED] }
+    SessionEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, sessionId, type, timestamp, source, payload]
+      properties:
+        eventId: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        type: { type: string }
+        timestamp: { type: string, format: date-time }
+        source: { type: string, enum: [core, media, ai, any] }
+        payload: { type: object, additionalProperties: true }
+    MediaEventReceipt:
+      type: object
+      additionalProperties: false
+      required: [eventId, accepted, sessionState]
+      properties:
+        eventId: { type: string, format: uuid }
+        accepted: { type: boolean }
+        sessionState: { type: string, enum: [CREATED, READY, RINGING, ACTIVE, COMPLETED, SCORING, SCORED, FAILED] }
     ServiceStatus:
       type: string
       enum: [ADDED, RECEIVED, ACCEPTED, RESPONDING, ARRIVED, COMPLETED, REFUSED, FAILED]
@@ -316,9 +452,9 @@ components:
     CreateSessionRequest:
       type: object
       additionalProperties: false
-      required: [scenarioId]
       properties:
         scenarioId: { type: string, format: uuid }
+        mode: { type: string, enum: [CARD, VOICE], default: CARD }
     StudentAssignment:
       type: object
       additionalProperties: false
@@ -333,13 +469,13 @@ components:
       properties:
         id: { type: string, format: uuid }
         scenarioId: { type: string, format: uuid }
-        mode: { type: string, enum: [CARD] }
+        mode: { type: string, enum: [CARD, VOICE] }
         state:
           type: string
           enum: [CREATED, READY, RINGING, ACTIVE, COMPLETED, SCORING, SCORED, FAILED]
         card: { $ref: "#/components/schemas/OperatorCard" }
         cardRevision: { type: integer, minimum: 0 }
-        startedAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
         endedAt: { type: [string, "null"], format: date-time }
         timeLimitSeconds: { type: integer, minimum: 1 }
         timeLimitExceeded: { type: boolean }

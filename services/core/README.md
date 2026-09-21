@@ -40,7 +40,8 @@ curl http://localhost:8080/actuator/health
 ```
 
 Настройки берутся из окружения: `CORE_PORT`, `CORE_ENVIRONMENT`,
-`CORE_VERSION`, `CORE_AI_BASE_URL` и `CORE_MEDIA_BASE_URL`. Все ответы имеют
+`CORE_VERSION`, `CORE_AI_BASE_URL`, `CORE_MEDIA_BASE_URL` и `CORE_MEDIA_MODE`
+(`http` по умолчанию, `mock` для локальных тестов). Все ответы имеют
 JSON-формат, а запросы получают корреляционный заголовок `X-Request-ID`.
 При передаче `X-Session-ID` он добавляется в MDC; JSON-логи включают оба
 идентификатора.
@@ -196,9 +197,51 @@ ws://localhost:8080/ws/sessions/{sessionId}/events
 }
 ```
 
-`AiClient` и `MediaClient` представлены `MockAiClient` и `MockMediaClient`.
-Они не выполняют сетевых вызовов, поэтому Core запускается без Python AI и Go
-Media; реальные адаптеры можно подключить через те же интерфейсы.
+Карточный сценарий не требует доступности AI: оценка при сбое возвращается к
+упрощённой логике Core. Голосовой сценарий использует реальные HTTP-клиенты AI
+и Media; только Media можно перевести в `CORE_MEDIA_MODE=mock` для локальных тестов.
+
+## Голосовая сессия (#54)
+
+Создайте сессию с `mode: VOICE` (при отсутствии `mode` остаётся `CARD`), затем
+начните звонок. `scenarioId` можно опустить для сценария по умолчанию 1050602.
+
+```http
+POST /api/teacher/sessions
+Content-Type: application/json
+
+{"mode":"VOICE"}
+```
+
+```http
+POST /api/teacher/sessions/{sessionId}/call/start
+Content-Type: application/json
+
+{"sipAddress":"PJSIP/1001"}
+```
+
+Core сначала вызывает `POST /ai/voice/sessions` с полным сценарием, получает
+`aiSessionId`, затем отправляет `POST /internal/v1/calls/start` в Media с
+`sessionId`, `aiSessionId`, `sipAddress`. Ответ `202` содержит `callId` и
+техническое состояние `RINGING`. Бизнес-сессия перейдёт в `ACTIVE` только после
+`call.answered` от Media. Ошибки AI/Media возвращаются как `503`, конфликт
+активного звонка — `409`, несоответствие ответа контракту — `502`.
+
+Media отправляет конверты `call.ringing`, `call.answered`, `call.ended`,
+`media.error` и `transcript.*` в `POST /internal/v1/media/events`. Core сверяет
+`sessionId`, `callId`, `aiSessionId`, подавляет повтор `eventId`, сохраняет
+события и транслирует их в `/ws/sessions/{sessionId}/events`. История доступна
+через `GET /api/teacher/sessions/{sessionId}/events`; состояние звонка — через
+`GET /api/teacher/sessions/{sessionId}/call`.
+
+`POST /api/teacher/sessions/{sessionId}/call/hangup` посылает команду Media и
+идемпотентен после подтверждённого завершения. Само состояние учебной сессии
+меняется только после события `call.ended`. Карточный `/start` и `/stop` для
+VOICE отклоняются; список карточных назначений VOICE не включает.
+
+Голосовые сессии и журнал событий пока in-memory. Конечная сквозная проверка
+реального звука требует Media RTP ↔ AI bridge (#53) и подключения Media event
+publisher к указанному HTTP endpoint; тесты Core используют подставные AI/Media.
 ## Назначения ДДС — задача #37
 
 После успешного `POST /api/student/sessions/{sessionId}/submit` создаются назначения

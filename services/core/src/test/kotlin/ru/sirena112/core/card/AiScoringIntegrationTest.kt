@@ -17,6 +17,7 @@ import ru.sirena112.core.integration.AiPenalty
 import ru.sirena112.core.integration.AiScoreCommand
 import ru.sirena112.core.integration.AiScoreReport
 import ru.sirena112.core.integration.AiSessionHandle
+import ru.sirena112.core.domain.Scenario
 import java.nio.file.Paths
 import java.util.UUID
 
@@ -32,8 +33,10 @@ class AiScoringIntegrationTest {
         var lastCommand: AiScoreCommand? = null
         var report: AiScoreReport? = null
 
-        override fun createSession(sessionId: UUID, scenarioId: UUID): AiSessionHandle =
+        override fun createSession(sessionId: UUID, scenario: Scenario): AiSessionHandle =
             AiSessionHandle("stub-$sessionId")
+
+        override fun closeSession(aiSessionId: String) = Unit
 
         override fun score(command: AiScoreCommand): AiScoreReport? {
             lastCommand = command

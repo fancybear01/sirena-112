@@ -1,5 +1,6 @@
 package ru.sirena112.core.integration
 
+import ru.sirena112.core.domain.Scenario
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -11,7 +12,13 @@ data class MediaCallCommand(
     val destination: String
 )
 
-data class MediaCallHandle(val sessionId: UUID, val started: Boolean)
+data class MediaCallHandle(
+    val callId: String,
+    val sessionId: UUID,
+    val aiSessionId: String,
+    val sipAddress: String,
+    val state: String
+)
 
 /**
  * Контракт Core -> Python AI.
@@ -21,7 +28,8 @@ data class MediaCallHandle(val sessionId: UUID, val started: Boolean)
  * и маршрутизации и передаёт свой расчёт готовым.
  */
 interface AiClient {
-    fun createSession(sessionId: UUID, scenarioId: UUID): AiSessionHandle
+    fun createSession(sessionId: UUID, scenario: Scenario): AiSessionHandle
+    fun closeSession(aiSessionId: String)
 
     /**
      * Просит AI оценить занятие.
@@ -36,15 +44,19 @@ interface AiClient {
 /** Контракт Core -> Go Media. Реальная REST/WebSocket-интеграция подключается позже. */
 interface MediaClient {
     fun startCall(command: MediaCallCommand): MediaCallHandle
-    fun hangup(sessionId: UUID): MediaCallHandle
+    fun hangup(callId: String, sessionId: UUID): MediaCallHandle
 }
 
 /** Заглушка для тестов и запуска без AI: оценку не считает. */
 class MockAiClient : AiClient {
     private val sessions = ConcurrentHashMap<UUID, AiSessionHandle>()
 
-    override fun createSession(sessionId: UUID, scenarioId: UUID): AiSessionHandle =
+    override fun createSession(sessionId: UUID, scenario: Scenario): AiSessionHandle =
         sessions.computeIfAbsent(sessionId) { AiSessionHandle("mock-ai-$sessionId") }
+
+    override fun closeSession(aiSessionId: String) {
+        sessions.entries.removeIf { it.value.aiSessionId == aiSessionId }
+    }
 
     override fun score(command: AiScoreCommand): AiScoreReport? = null
 }
@@ -55,11 +67,13 @@ class MockMediaClient : MediaClient {
 
     override fun startCall(command: MediaCallCommand): MediaCallHandle {
         calls[command.sessionId] = command
-        return MediaCallHandle(command.sessionId, started = true)
+        return MediaCallHandle("mock-${command.sessionId}", command.sessionId,
+            command.aiSessionId, command.destination, "RINGING")
     }
 
-    override fun hangup(sessionId: UUID): MediaCallHandle {
-        calls.remove(sessionId)
-        return MediaCallHandle(sessionId, started = false)
+    override fun hangup(callId: String, sessionId: UUID): MediaCallHandle {
+        val command = calls.remove(sessionId)
+        return MediaCallHandle(callId, sessionId, command?.aiSessionId.orEmpty(),
+            command?.destination.orEmpty(), "ENDED")
     }
 }

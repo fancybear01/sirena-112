@@ -8,11 +8,26 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.servlet.NoHandlerFoundException
 import ru.sirena112.core.domain.InvalidSessionTransitionException
+import ru.sirena112.core.integration.UpstreamConflictException
+import ru.sirena112.core.integration.UpstreamProtocolException
+import ru.sirena112.core.integration.UpstreamUnavailableException
 import java.time.Instant
 import java.util.NoSuchElementException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
+
+    @ExceptionHandler(UpstreamUnavailableException::class)
+    fun handleUpstreamUnavailable(exception: UpstreamUnavailableException, request: ServletWebRequest): ResponseEntity<ApiError> =
+        response(HttpStatus.SERVICE_UNAVAILABLE, "UPSTREAM_UNAVAILABLE", exception.message ?: "Внешний сервис недоступен", request)
+
+    @ExceptionHandler(UpstreamConflictException::class)
+    fun handleUpstreamConflict(exception: UpstreamConflictException, request: ServletWebRequest): ResponseEntity<ApiError> =
+        response(HttpStatus.CONFLICT, "UPSTREAM_CONFLICT", exception.message ?: "Конфликт звонка", request)
+
+    @ExceptionHandler(UpstreamProtocolException::class)
+    fun handleUpstreamProtocol(exception: UpstreamProtocolException, request: ServletWebRequest): ResponseEntity<ApiError> =
+        response(HttpStatus.BAD_GATEWAY, "UPSTREAM_PROTOCOL_ERROR", exception.message ?: "Некорректный ответ внешнего сервиса", request)
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleUnreadable(
