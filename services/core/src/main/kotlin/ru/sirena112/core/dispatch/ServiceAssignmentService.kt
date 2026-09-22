@@ -8,23 +8,38 @@ import ru.sirena112.core.domain.*
 import java.time.Clock
 import java.util.UUID
 
+interface ServiceAssignmentRepository {
+    fun save(assignment: ServiceAssignment): ServiceAssignment
+    fun findById(id: UUID): ServiceAssignment?
+    fun findBySessionId(sessionId: UUID): List<ServiceAssignment>
+    fun existsBySessionId(sessionId: UUID): Boolean
+}
+
+class InMemoryServiceAssignmentRepository : ServiceAssignmentRepository {
+    private val assignments = linkedMapOf<UUID, ServiceAssignment>()
+
+    @Synchronized override fun save(assignment: ServiceAssignment): ServiceAssignment = assignment.also { assignments[it.id] = it }
+    @Synchronized override fun findById(id: UUID): ServiceAssignment? = assignments[id]
+    @Synchronized override fun findBySessionId(sessionId: UUID): List<ServiceAssignment> =
+        assignments.values.filter { it.sessionId == sessionId }
+    @Synchronized override fun existsBySessionId(sessionId: UUID): Boolean = assignments.values.any { it.sessionId == sessionId }
+}
+
 /** In-memory учебная реализация: состояние записывается до публикации события. */
 class ServiceAssignmentService(
     private val sessions: TrainingSessionRepository,
     private val events: SessionEventRepository,
     private val clock: Clock = Clock.systemUTC(),
-    private val deadlineSeconds: Long = 3600
+    private val deadlineSeconds: Long = 3600,
+    private val repository: ServiceAssignmentRepository = InMemoryServiceAssignmentRepository()
 ) {
     init { require(deadlineSeconds > 0) { "Срок реагирования должен быть положительным" } }
-
-    private val assignments = linkedMapOf<UUID, ServiceAssignment>()
-    private val dispatched = mutableSetOf<UUID>()
 
     /** Фиксируем один набор адресатов отправленной карточки, не каждого черновика. */
     @Synchronized
     fun assignSubmittedCard(sessionId: UUID): List<ServiceAssignment> {
         val session = requireSession(sessionId)
-        if (sessionId in dispatched) return list(sessionId)
+        if (repository.existsBySessionId(sessionId)) return repository.findBySessionId(sessionId)
         check(session.state in setOf(SessionState.ACTIVE, SessionState.COMPLETED)) {
             "Назначения доступны только при отправке карточки"
         }
@@ -43,17 +58,16 @@ class ServiceAssignmentService(
                     timestamp, AssignmentSource.SYSTEM))
             )
         }
-        created.forEach { assignments[it.id] = it }
-        dispatched += sessionId
+        created.forEach(repository::save)
         created.forEach { publish(it, SessionEventType.SERVICE_ASSIGNED) }
-        return list(sessionId)
+        return repository.findBySessionId(sessionId)
     }
 
     @Synchronized
     fun list(sessionId: UUID): List<ServiceAssignment> {
         requireSession(sessionId)
         val now = clock.instant()
-        return assignments.values.filter { it.sessionId == sessionId }.map {
+        return repository.findBySessionId(sessionId).map {
             // Флаг просрочки не заменяет статус и не дописывает фиктивный переход.
             it.copy(overdue = !it.status.terminal && !now.isBefore(it.deadlineAt))
         }
@@ -62,7 +76,7 @@ class ServiceAssignmentService(
     @Synchronized
     fun changeStatus(sessionId: UUID, assignmentId: UUID, request: ChangeServiceStatusRequest): ServiceAssignment {
         requireSession(sessionId)
-        val current = assignments[assignmentId]?.takeIf { it.sessionId == sessionId }
+        val current = repository.findById(assignmentId)?.takeIf { it.sessionId == sessionId }
             ?: throw NoSuchElementException("Назначение службы $assignmentId не найдено")
         require((request.comment?.length ?: 0) <= 2000) { "Комментарий длиннее 2000 символов" }
         require((request.refusalReason?.length ?: 0) <= 2000) { "Причина отказа длиннее 2000 символов" }
@@ -84,7 +98,7 @@ class ServiceAssignmentService(
                 request.comment, request.refusalReason)
             val updated = current.copy(status = request.status, updatedAt = timestamp,
                 history = current.history + entry)
-            assignments[assignmentId] = updated
+            repository.save(updated)
             publish(updated, SessionEventType.SERVICE_STATUS_CHANGED)
         }
         return list(sessionId).first { it.id == assignmentId }
@@ -113,6 +127,13 @@ class ServiceAssignmentConfiguration {
     fun serviceAssignmentService(
         sessions: TrainingSessionRepository,
         events: SessionEventRepository,
+        repository: ServiceAssignmentRepository,
         @Value("\${core.service-assignments.deadline-seconds:3600}") deadlineSeconds: Long
-    ): ServiceAssignmentService = ServiceAssignmentService(sessions, events, deadlineSeconds = deadlineSeconds)
+    ): ServiceAssignmentService = ServiceAssignmentService(sessions, events, deadlineSeconds = deadlineSeconds, repository = repository)
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = ["core.storage"], havingValue = "in-memory", matchIfMissing = true
+    )
+    fun serviceAssignmentRepository(): ServiceAssignmentRepository = InMemoryServiceAssignmentRepository()
 }

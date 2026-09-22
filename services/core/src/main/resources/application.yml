@@ -1,6 +1,14 @@
 spring:
   application:
     name: sirena-core
+  datasource:
+    # In-memory storage is the explicit local/test fallback. PostgreSQL is enabled
+    # with CORE_STORAGE=postgres and CORE_DATABASE_URL in deployment.
+    url: ${CORE_DATABASE_URL:jdbc:h2:mem:sirena-core;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
+    username: ${CORE_DATABASE_USERNAME:sa}
+    password: ${CORE_DATABASE_PASSWORD:}
+  flyway:
+    enabled: ${CORE_FLYWAY_ENABLED:false}
   jackson:
     deserialization:
       # Тела запросов строгие: вычисляемые поля карточки (incidentType, службы)
@@ -19,6 +27,7 @@ server:
   shutdown: graceful
 
 core:
+  storage: ${CORE_STORAGE:in-memory}
   environment: ${CORE_ENVIRONMENT:local}
   version: ${CORE_VERSION:dev}
   ai-base-url: ${CORE_AI_BASE_URL:http://localhost:8090}
