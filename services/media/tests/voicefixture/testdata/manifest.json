@@ -1,0 +1,38 @@
+[
+  {
+    "file": "00.rtp",
+    "bytes": 172,
+    "durationMs": 20,
+    "sha256": "da319011022bd09b1942299a977461febc57e635e08353ff40a4b646b0b703bf"
+  },
+  {
+    "file": "00.pcm",
+    "bytes": 640,
+    "durationMs": 20,
+    "sha256": "9e132485d5107211de325a45e7917cbe3e4b5b9cde3e4ee91d7d2102317759ee"
+  },
+  {
+    "file": "01.rtp",
+    "bytes": 172,
+    "durationMs": 20,
+    "sha256": "c6d6f44fb844bd2633686eef96fff98b1ed63bfb2a1828e3057c0ddc8f8f5617"
+  },
+  {
+    "file": "01.pcm",
+    "bytes": 640,
+    "durationMs": 20,
+    "sha256": "fcc1245c6284f916cc4286928ad7575c0d3f15400b96c3b17771656d466fdc8e"
+  },
+  {
+    "file": "02.rtp",
+    "bytes": 172,
+    "durationMs": 20,
+    "sha256": "8962c09d75adbc73907ef7af8a9cf477d4d2f315ba595743cabe8f8faeaf5f49"
+  },
+  {
+    "file": "02.pcm",
+    "bytes": 640,
+    "durationMs": 20,
+    "sha256": "d4dec2803df98a8734d4da5eac737f84f483462638f6a6df7aa50802769fd186"
+  }
+]
