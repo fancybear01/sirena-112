@@ -1,0 +1,77 @@
+"""Речевые адаптеры: формат выдачи и режим без моделей.
+
+Сами модели здесь не нужны: проверяется то, что от них не зависит -
+пересчёт частоты и поведение заглушек.
+"""
+
+import struct
+
+import pytest
+
+from app.voice.speech import (
+    SpeechPipeline,
+    SpeechUnavailable,
+    UnavailableRecognizer,
+    UnavailableSynthesizer,
+    resample_pcm16,
+)
+
+
+def tone(samples: int, rate: int) -> bytes:
+    """Простой сигнал: важна только длина, а не звучание."""
+    return struct.pack("<%dh" % samples, *[(index % 100) * 300 - 15000 for index in range(samples)])
+
+
+def test_downsampling_keeps_duration():
+    """Голоса Piper звучат на 22050, контракт требует 16000.
+
+    Длительность при пересчёте обязана сохраниться: иначе Media проиграет
+    реплику не на той скорости и голос поплывёт по тону.
+    """
+    one_second = tone(22050, 22050)
+
+    result = resample_pcm16(one_second, 22050, 16000)
+
+    assert len(result) // 2 == pytest.approx(16000, abs=2)
+
+
+def test_same_rate_is_returned_untouched():
+    audio = tone(1600, 16000)
+
+    assert resample_pcm16(audio, 16000, 16000) is audio
+
+
+def test_empty_audio_survives_resampling():
+    assert resample_pcm16(b"", 22050, 16000) == b""
+
+
+def test_resampled_audio_is_valid_pcm16():
+    result = resample_pcm16(tone(4410, 22050), 22050, 16000)
+
+    assert len(result) % 2 == 0
+    values = struct.unpack("<%dh" % (len(result) // 2), result)
+    assert all(-32768 <= value <= 32767 for value in values)
+
+
+# --- режим без моделей --------------------------------------------------------
+
+
+def test_unavailable_recognizer_explains_what_to_configure():
+    with pytest.raises(SpeechUnavailable) as error:
+        UnavailableRecognizer().transcribe(b"")
+
+    assert "AI_STT" in str(error.value)
+
+
+def test_unavailable_synthesizer_explains_what_to_configure():
+    with pytest.raises(SpeechUnavailable) as error:
+        UnavailableSynthesizer().synthesize("текст")
+
+    assert "AI_TTS" in str(error.value)
+
+
+def test_pipeline_without_models_is_not_available():
+    pipeline = SpeechPipeline(UnavailableRecognizer(), UnavailableSynthesizer())
+
+    assert pipeline.available is False
+    assert pipeline.simulated is True
