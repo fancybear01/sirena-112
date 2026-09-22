@@ -24,6 +24,7 @@ services:
       CORE_PORT: "8080"
       CORE_AI_BASE_URL: http://ai:8090
       CORE_MEDIA_MODE: mock
+      CORE_STORAGE: in-memory
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -70,4 +71,3 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
-

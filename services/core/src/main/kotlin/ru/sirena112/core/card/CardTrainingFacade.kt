@@ -3,6 +3,7 @@ package ru.sirena112.core.card
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import ru.sirena112.core.classifier.CardCalculation
 import ru.sirena112.core.classifier.CardFormDefinition
 import ru.sirena112.core.classifier.CardScenarioFixtures
@@ -87,9 +88,9 @@ class CardTrainingFacade(
     private val sessionService: TrainingSessionService,
     private val classifierService: ClassifierService,
     private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService,
-    private val aiClient: ru.sirena112.core.integration.AiClient
+    private val aiClient: ru.sirena112.core.integration.AiClient,
+    private val reportRepository: SessionReportRepository
 ) {
-    private val reports = java.util.concurrent.ConcurrentHashMap<UUID, SessionReport>()
 
     fun scenarios(): List<Scenario> = scenarioRepository.findAll().sortedBy { it.groundTruth.classifierCode }
 
@@ -130,6 +131,7 @@ class CardTrainingFacade(
     fun get(sessionId: UUID): SessionView = requireSession(sessionId).toView()
 
     /** Сохранение черновика: черновик можно сохранять до полного заполнения. */
+    @Transactional
     fun saveCard(sessionId: UUID, request: SaveCardRequest): SessionView {
         val session = requireCardSession(sessionId)
         if (request.input.isEmpty()) {
@@ -155,6 +157,7 @@ class CardTrainingFacade(
     }
 
     /** Отправка на оценку: обязательные поля должны быть заполнены, тип вычислен. */
+    @Transactional
     fun submit(sessionId: UUID, request: SubmitCardRequest): SessionReport {
         var session = requireCardSession(sessionId)
         if (request.input.isNotEmpty() && request.input != session.operatorCard.input) {
@@ -165,24 +168,26 @@ class CardTrainingFacade(
         emitTimeLimitEventOnce(session)
         sessionService.submitAnswer(session.id)
         serviceAssignments.assignSubmittedCard(session.id)
+        session = requireSession(session.id)
         if (session.state == SessionState.ACTIVE) {
             sessionService.complete(session.id)
         }
+        session = requireSession(session.id)
         if (session.state != SessionState.COMPLETED) {
             throw IllegalStateException("Отправка доступна только для активной или завершённой сессии")
         }
         sessionService.startScoring(session.id)
+        session = requireSession(session.id)
         // Оценку считает AI: там рубрика, разбор транскрипта и объяснения.
         // Если он недоступен, занятие не останавливается - Core отдаёт свой
         // упрощённый отчёт, а карточка обучающегося уже сохранена.
         val report = scoreByAi(session) ?: score(session)
-        reports[session.id] = report
+        reportRepository.save(report)
         sessionService.completeScoring(session.id)
         return report
     }
 
-    fun report(sessionId: UUID): SessionReport = reports[sessionId]
-        ?: throw NoSuchElementException("Отчёт для сессии $sessionId ещё не сформирован")
+    fun report(sessionId: UUID): SessionReport = reportRepository.findBySessionId(sessionId)
 
     private fun routingEventPayload(cardRevision: Int, calculation: CardCalculation): Map<String, Any?> = mapOf(
         "cardRevision" to cardRevision,
@@ -345,7 +350,7 @@ class CardTrainingFacade(
         endedAt = endedAt,
         timeLimitSeconds = scenario.timeLimitSeconds,
         timeLimitExceeded = timeLimitExceeded(),
-        report = reports[id]
+        report = reportRepository.findBySessionIdOrNull(id)
     )
 
     companion object {
@@ -369,6 +374,9 @@ class CardTrainingConfiguration {
         CardScenarioFixtures(objectMapper)
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = ["core.storage"], havingValue = "in-memory", matchIfMissing = true
+    )
     fun scenarioRepository(
         catalog: ClassifierCatalog,
         fixtures: CardScenarioFixtures
@@ -377,10 +385,22 @@ class CardTrainingConfiguration {
     }
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = ["core.storage"], havingValue = "in-memory", matchIfMissing = true
+    )
     fun trainingSessionRepository(): InMemoryTrainingSessionRepository = InMemoryTrainingSessionRepository()
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = ["core.storage"], havingValue = "in-memory", matchIfMissing = true
+    )
     fun sessionEventRepository(): InMemorySessionEventRepository = InMemorySessionEventRepository()
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = ["core.storage"], havingValue = "in-memory", matchIfMissing = true
+    )
+    fun sessionReportRepository(): SessionReportRepository = InMemorySessionReportRepository()
 
     @Bean
     fun trainingSessionService(

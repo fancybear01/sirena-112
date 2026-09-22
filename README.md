@@ -69,6 +69,16 @@ docker compose up -d postgres
 docker compose up -d --build asterisk media
 ```
 
+Для устойчивого Core с PostgreSQL (миграции Flyway запускаются автоматически):
+
+```bash
+docker compose up -d --build postgres core
+```
+
+Core использует PostgreSQL при `CORE_STORAGE=postgres`. Значение `in-memory`
+оставлено только для unit-тестов и изолированного карточного демо; оно не
+переживает перезапуск процесса.
+
 Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).  
 Media Gateway: [`services/media/README.md`](services/media/README.md), контракт [`contracts/media-core.md`](contracts/media-core.md).
 

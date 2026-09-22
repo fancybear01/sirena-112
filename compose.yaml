@@ -18,6 +18,32 @@ services:
       retries: 10
     restart: unless-stopped
 
+  core:
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile.card
+    environment:
+      CORE_PORT: "8080"
+      CORE_STORAGE: postgres
+      CORE_FLYWAY_ENABLED: "true"
+      CORE_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sirena112}
+      CORE_DATABASE_USERNAME: ${POSTGRES_USER:-sirena112}
+      CORE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-sirena112-local}
+      CORE_MEDIA_BASE_URL: http://media:8091
+      CORE_MEDIA_MODE: ${CORE_MEDIA_MODE:-http}
+    ports:
+      - "127.0.0.1:${CORE_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 25s
+    restart: unless-stopped
+
   asterisk:
     build:
       context: ./infra/asterisk

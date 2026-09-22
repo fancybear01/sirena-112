@@ -199,5 +199,28 @@ class TrainingSession(
         )
 
         private val CARD_UPDATE_STATES = setOf(SessionState.READY, SessionState.ACTIVE)
+
+        /** Rehydrates an aggregate from the durable repository without replaying commands. */
+        fun restore(
+            id: UUID,
+            scenario: Scenario,
+            mode: SessionMode,
+            state: SessionState,
+            operatorCard: OperatorCard,
+            cardRevision: Int,
+            createdAt: Instant,
+            startedAt: Instant?,
+            endedAt: Instant?,
+            updatedAt: Instant,
+            failureReason: String?,
+            timeLimitEventEmitted: Boolean
+        ): TrainingSession = TrainingSession(id, scenario, mode, state, operatorCard, createdAt).also { session ->
+            session.cardRevision = cardRevision
+            session.startedAt = startedAt
+            session.endedAt = endedAt
+            session.updatedAt = updatedAt
+            session.failureReason = failureReason
+            session.timeLimitEventEmitted = timeLimitEventEmitted
+        }
     }
 }
