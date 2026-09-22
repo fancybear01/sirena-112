@@ -15,6 +15,7 @@
 
 import os
 import struct
+from array import array
 from typing import Optional, Protocol, Tuple
 
 SAMPLE_RATE = 16000
@@ -95,6 +96,34 @@ class VoskRecognizer:
         return json.loads(recognizer.FinalResult()).get("text", "").strip()
 
 
+def resample_pcm16(pcm: bytes, source_rate: int, target_rate: int) -> bytes:
+    """Приводит звук к нужной частоте линейной интерполяцией.
+
+    Нужна потому, что голоса Piper звучат на своей частоте - у ru_RU-irina
+    это 22050 Гц, а контракт с Media требует 16000. Без пересчёта Media
+    проиграла бы реплику не на той скорости: голос поплыл бы по тону.
+
+    Интерполяция самая простая, без фильтра: для речи в телефонном качестве
+    этого достаточно, а лишней зависимости не появляется.
+    """
+    if source_rate == target_rate or not pcm:
+        return pcm
+
+    source = memoryview(pcm).cast("h")
+    target_length = int(len(source) * target_rate / source_rate)
+    result = array("h", bytes(target_length * 2))
+
+    step = len(source) / target_length
+    for index in range(target_length):
+        position = index * step
+        left = int(position)
+        right = min(left + 1, len(source) - 1)
+        weight = position - left
+        result[index] = int(source[left] * (1 - weight) + source[right] * weight)
+
+    return result.tobytes()
+
+
 class PiperSynthesizer:
     """Синтез Piper. Лицензия MIT, поэтому пригоден для поставки заказчику."""
 
@@ -105,6 +134,7 @@ class PiperSynthesizer:
         from piper import PiperVoice
 
         self._voice = PiperVoice.load(model_path)
+        self._native_rate = self._voice.config.sample_rate
 
     def synthesize(self, text: str, sample_rate: int = SAMPLE_RATE) -> bytes:
         import io
@@ -115,7 +145,10 @@ class PiperSynthesizer:
             self._voice.synthesize_wav(text, writer)
         buffer.seek(0)
         with wave.open(buffer, "rb") as reader:
-            return reader.readframes(reader.getnframes())
+            audio = reader.readframes(reader.getnframes())
+            native_rate = reader.getframerate()
+
+        return resample_pcm16(audio, native_rate, sample_rate)
 
 
 class ScriptedRecognizer:
