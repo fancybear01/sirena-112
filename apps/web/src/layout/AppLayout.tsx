@@ -1,8 +1,9 @@
 import { AppShell, Button, Group } from '@mantine/core';
-import { Link, Outlet } from 'react-router';
+import { Link, Outlet, useLocation } from 'react-router';
 import { Brand } from '../shared/Brand';
 
 export function AppLayout() {
+  const isStudentPage = useLocation().pathname === '/student';
   return (
     <AppShell header={{ height: 68 }} padding="xl">
       <AppShell.Header className="shell-header">
@@ -15,7 +16,7 @@ export function AppLayout() {
       </AppShell.Header>
 
       <AppShell.Main className="shell-main">
-        <div className="content-wrap"><Outlet /></div>
+        <div className={`content-wrap${isStudentPage ? ' content-wrap--student' : ''}`}><Outlet /></div>
       </AppShell.Main>
     </AppShell>
   );
