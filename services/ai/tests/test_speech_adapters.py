@@ -9,6 +9,7 @@ import struct
 import pytest
 
 from app.voice.speech import (
+    PiperSynthesizer,
     SpeechPipeline,
     SpeechUnavailable,
     UnavailableRecognizer,
@@ -51,6 +52,52 @@ def test_resampled_audio_is_valid_pcm16():
     assert len(result) % 2 == 0
     values = struct.unpack("<%dh" % (len(result) // 2), result)
     assert all(-32768 <= value <= 32767 for value in values)
+
+
+# --- синтез отдаёт частоту контракта, а не свою -------------------------------
+
+
+class FakeVoice:
+    """Голос, который поёт на своей частоте - как настоящие голоса Piper.
+
+    Нужен, чтобы проверить адаптер без загрузки модели на 60 мегабайт.
+    """
+
+    def __init__(self, rate: int, seconds: float = 1.0) -> None:
+        self.rate = rate
+        self._samples = int(rate * seconds)
+
+    def synthesize_wav(self, text: str, writer) -> None:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(self.rate)
+        writer.writeframes(tone(self._samples, self.rate))
+
+
+def piper_with(voice: FakeVoice) -> PiperSynthesizer:
+    """Собирает адаптер в обход __init__: он там грузит настоящую модель."""
+    synthesizer = object.__new__(PiperSynthesizer)
+    synthesizer._voice = voice
+    synthesizer._native_rate = voice.rate
+    return synthesizer
+
+
+def test_piper_converts_its_own_rate_to_the_requested_one():
+    """Ошибка из #72: адаптер отдавал звук на 22050, а поток обещал 16000.
+
+    Кадры при этом шли исправно, длительность считалась по байтам, и всё
+    выглядело здоровым - реплика просто звучала не с той скоростью и не тем
+    голосом. Ловится только сравнением с запрошенной частотой.
+    """
+    audio = piper_with(FakeVoice(22050)).synthesize("реплика", 16000)
+
+    assert len(audio) // 2 == pytest.approx(16000, abs=2)
+
+
+def test_piper_leaves_audio_alone_when_rates_already_match():
+    audio = piper_with(FakeVoice(16000)).synthesize("реплика", 16000)
+
+    assert len(audio) // 2 == 16000
 
 
 # --- режим без моделей --------------------------------------------------------
