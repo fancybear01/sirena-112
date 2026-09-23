@@ -5,6 +5,8 @@
 """
 
 import struct
+import threading
+import time
 
 import pytest
 
@@ -79,6 +81,7 @@ def piper_with(voice: FakeVoice) -> PiperSynthesizer:
     synthesizer = object.__new__(PiperSynthesizer)
     synthesizer._voice = voice
     synthesizer._native_rate = voice.rate
+    synthesizer._lock = threading.Lock()
     return synthesizer
 
 
@@ -98,6 +101,44 @@ def test_piper_leaves_audio_alone_when_rates_already_match():
     audio = piper_with(FakeVoice(16000)).synthesize("реплика", 16000)
 
     assert len(audio) // 2 == 16000
+
+
+class CountingVoice(FakeVoice):
+    """Голос, который замечает, что в него вошли вдвоём."""
+
+    def __init__(self, rate: int = 22050) -> None:
+        super().__init__(rate, seconds=0.05)
+        self.inside = 0
+        self.overlapped = False
+
+    def synthesize_wav(self, text: str, writer) -> None:
+        self.inside += 1
+        self.overlapped = self.overlapped or self.inside > 1
+        time.sleep(0.05)
+        super().synthesize_wav(text, writer)
+        self.inside -= 1
+
+
+def test_piper_does_not_let_two_calls_in_at_once():
+    """Два звонка не должны синтезировать одновременно.
+
+    После #74 распознавание и синтез уехали из event loop в рабочие потоки,
+    и одну и ту же модель теперь дёргают разные звонки. Фонемизатор Piper
+    живёт в глобальной переменной модуля, одной на процесс, поэтому вход
+    в синтез закрыт замком.
+    """
+    voice = CountingVoice()
+    synthesizer = piper_with(voice)
+    threads = [
+        threading.Thread(target=synthesizer.synthesize, args=("реплика", 16000)) for _ in range(4)
+    ]
+
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not voice.overlapped, "два потока вошли в синтез одновременно"
 
 
 # --- режим без моделей --------------------------------------------------------

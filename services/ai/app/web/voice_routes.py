@@ -6,12 +6,19 @@
 """
 
 import asyncio
+import contextlib
 import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from starlette.concurrency import run_in_threadpool
 
-from app.schemas.voice import IncomingType, VoiceSessionRequest, VoiceSessionResponse
+from app.schemas.voice import (
+    IncomingType,
+    OutgoingType,
+    VoiceSessionRequest,
+    VoiceSessionResponse,
+)
 from app.voice.sessions import TooManySessions, store
 from app.voice.speech import get_pipeline
 from app.voice.stream import Frame, VoiceStream
@@ -25,6 +32,16 @@ stream_router = APIRouter(tags=["voice"])
 # несовпадающей паре идентификаторов, а причину надо различать на стороне Media.
 CLOSE_UNKNOWN_SESSION = 4404
 CLOSE_SESSION_BUSY = 4409
+
+# Сколько звука разрешено держать в очереди на отправку - десять секунд речи.
+# Реплика абонента занимает секунды три-четыре, так что предел не мешает
+# обычному разговору. Он нужен на случай, когда Media перестала читать:
+# без него ответы копятся в памяти без всякой границы.
+MAX_QUEUED_AUDIO_BYTES = 16000 * 2 * 10
+
+# Сколько ждём, пока отправитель дошлёт хвост перед закрытием потока.
+# Если Media уже не читает, ждать вечно нельзя.
+DRAIN_SECONDS = 5.0
 
 
 @voice_router.post(
@@ -77,19 +94,73 @@ def _speech_notice(pipeline) -> Optional[str]:
     return None
 
 
-def _drop_queued_audio(queue: "asyncio.Queue[Frame]") -> None:
-    """Снимает недоигранный ответ при перебивании.
+def _is_turn_end(frame: Frame) -> bool:
+    """Кадр, которым заканчивается реплика абонента."""
+    return (
+        not frame.is_audio
+        and frame.payload is not None
+        and frame.payload.get("type") == OutgoingType.CALLER_STATE_CHANGED.value
+    )
 
-    Управляющие сообщения при этом сохраняются: Media должна узнать, чем
-    закончилась прерванная реплика.
+
+class OutgoingQueue:
+    """Очередь на отправку с ограничением по объёму звука.
+
+    Управляющие сообщения кладутся всегда: их мало, и по ним Media понимает,
+    чем закончилась реплика. Ограничивается только звук - именно он способен
+    занять память, если Media читает медленнее, чем AI синтезирует.
     """
-    kept: List[Frame] = []
-    while not queue.empty():
-        frame = queue.get_nowait()
-        if not frame.is_audio:
-            kept.append(frame)
-    for frame in kept:
-        queue.put_nowait(frame)
+
+    def __init__(self, limit: int = MAX_QUEUED_AUDIO_BYTES) -> None:
+        self._queue: "asyncio.Queue[Frame]" = asyncio.Queue()
+        self._limit = limit
+        self._audio_bytes = 0
+        self._dropped_bytes = 0
+
+    def put(self, frame: Frame) -> bool:
+        """Кладёт кадр. Возвращает False, если звук пришлось отбросить."""
+        if frame.is_audio:
+            size = len(frame.audio)
+            if self._audio_bytes + size > self._limit:
+                self._dropped_bytes += size
+                return False
+            self._audio_bytes += size
+        self._queue.put_nowait(frame)
+        return True
+
+    async def get(self) -> Frame:
+        frame = await self._queue.get()
+        if frame.is_audio:
+            self._audio_bytes -= len(frame.audio)
+        return frame
+
+    def task_done(self) -> None:
+        self._queue.task_done()
+
+    async def join(self) -> None:
+        await self._queue.join()
+
+    def take_dropped(self) -> int:
+        """Сколько звука отбросили с прошлого раза. Счётчик обнуляется."""
+        dropped, self._dropped_bytes = self._dropped_bytes, 0
+        return dropped
+
+    def drop_audio(self) -> None:
+        """Снимает недоигранный ответ при перебивании.
+
+        Управляющие сообщения при этом сохраняются: Media должна узнать, чем
+        закончилась прерванная реплика. Отброшенное здесь не считается потерей -
+        его сняли намеренно, по команде Media.
+        """
+        kept: List[Frame] = []
+        while not self._queue.empty():
+            frame = self._queue.get_nowait()
+            self._queue.task_done()
+            if not frame.is_audio:
+                kept.append(frame)
+        self._audio_bytes = 0
+        for frame in kept:
+            self._queue.put_nowait(frame)
 
 
 @stream_router.websocket("/internal/v1/voice/{ai_session_id}")
@@ -111,17 +182,41 @@ async def voice_stream(
 
     await websocket.accept()
     stream = VoiceStream(session, get_pipeline())
-    outgoing: "asyncio.Queue[Frame]" = asyncio.Queue()
+    outgoing = OutgoingQueue()
 
     async def sender() -> None:
         while True:
             frame = await outgoing.get()
-            if frame.is_audio:
-                await websocket.send_bytes(frame.audio)
-            else:
-                await websocket.send_json(frame.payload)
+            try:
+                if frame.is_audio:
+                    await websocket.send_bytes(frame.audio)
+                else:
+                    await websocket.send_json(frame.payload)
+            finally:
+                outgoing.task_done()
 
     sender_task = asyncio.create_task(sender())
+
+    def report_overflow() -> None:
+        """Сообщает об отброшенном звуке, пока реплика не закрыта.
+
+        Молчать нельзя: Media решит, что абонент договорил, и занятие
+        разберут по реплике, которой курсант не слышал.
+        """
+        dropped = outgoing.take_dropped()
+        if not dropped:
+            return
+        log.warning(
+            "Голосовой поток %s: отброшено %d байт звука, Media не успевает читать",
+            ai_session_id,
+            dropped,
+        )
+        outgoing.put(
+            stream.error_frame(
+                "output.overflow",
+                "Очередь отправки переполнена, часть звука ответа отброшена.",
+            )
+        )
 
     try:
         while True:
@@ -130,6 +225,7 @@ async def voice_stream(
                 break
 
             if message.get("bytes") is not None:
+                # Приём звука - это дописать в буфер, считать тут нечего.
                 frames = stream.handle_audio(message["bytes"])
             else:
                 payload = _decode(message.get("text"))
@@ -137,22 +233,35 @@ async def voice_stream(
                     frames = [stream.error_frame("message.invalid", "Ожидался JSON в текстовом фрейме.")]
                 else:
                     if payload.get("type") == IncomingType.RESPONSE_CANCEL.value:
-                        _drop_queued_audio(outgoing)
-                    frames = stream.handle_message(payload)
+                        outgoing.drop_audio()
+                    # Распознавание и синтез уходят в отдельный поток.
+                    # Внутри них работают Vosk и Piper: они считают в си-коде
+                    # по полсекунды и event loop не отдают. Оставь вызов здесь -
+                    # и на это время встанут все остальные звонки разом.
+                    frames = await run_in_threadpool(stream.handle_message, payload)
 
             for frame in frames:
-                outgoing.put_nowait(frame)
+                # caller.state_changed завершает реплику, и на нём читающая
+                # сторона останавливается. Про потерю звука надо успеть
+                # сказать до него, иначе сообщение никто не увидит.
+                if _is_turn_end(frame):
+                    report_overflow()
+                outgoing.put(frame)
+
+            report_overflow()
 
             if stream.stopped:
                 # Даём отправителю дослать управляющие сообщения перед закрытием:
                 # иначе Media не узнает, что абонент бросил трубку.
-                while not outgoing.empty():
-                    await asyncio.sleep(0)
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(outgoing.join(), timeout=DRAIN_SECONDS)
                 break
     except WebSocketDisconnect:
         pass
     finally:
         sender_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await sender_task
         with session.lock:
             session.attached = False
         # Сырой звук в логи не пишем: только сколько его было.
