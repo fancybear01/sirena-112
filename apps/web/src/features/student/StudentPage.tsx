@@ -4,7 +4,6 @@ import {
   Badge,
   Button,
   Checkbox,
-  Divider,
   Group,
   NumberInput,
   Paper,
@@ -237,7 +236,7 @@ function CalculationView({ calculation }: { calculation: CardCalculation | null 
         <Group gap="sm" align="flex-start" wrap="nowrap">
           <ThemeIcon variant="light" color="blue"><IconRoute size={18} /></ThemeIcon>
           <div>
-            <Text fw={650}>Результат Core</Text>
+            <Text fw={650}>Тип происшествия</Text>
             <Text size="sm" c="dimmed">Выберите признаки, чтобы Core определил тип и службы.</Text>
           </div>
         </Group>
@@ -498,55 +497,210 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   const timeLimitExceeded = timer.isExceeded || assignment.session.timeLimitExceeded;
 
   return (
-    <Stack className="student-page" gap="xl">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
+    <Stack className="student-page" gap="md">
+      <Paper className="assignment-brief" withBorder radius="sm" p="md">
+        <div className="assignment-brief__main">
           <Text className="page-eyebrow">Учебная сессия · классификатор {cardForm.classifierVersion}</Text>
           <Title order={1}>{report ? 'Результат задания' : 'Моё задание'}</Title>
-          <Text c="dimmed" mt={5}>
-            {report ? 'Изучите разбор, сформированный Core/AI.' : 'Фиксируйте факты — тип и службы рассчитает Core.'}
+          {!report && <Title className="assignment-brief__scenario" order={2}>{assignment.scenario.title}</Title>}
+          <Text className="assignment-brief__profile" size="sm">
+            {report ? 'Изучите разбор, сформированный Core/AI.' : assignment.scenario.profile}
           </Text>
         </div>
-        {!report && saveStatus !== 'idle' && (
-          <Group className={`save-indicator save-indicator--${saveStatus}`} gap={7} wrap="nowrap">
-            <IconDeviceFloppy size={16} aria-hidden="true" />
-            <Text size="xs">{saveStatusText}</Text>
-          </Group>
-        )}
-      </Group>
-
-      <Paper className="assignment-brief" withBorder radius="lg" p="xl">
-        <div className="assignment-brief__main">
-          <Title order={2}>{assignment.scenario.title}</Title>
-          <Text className="assignment-brief__profile" mt="sm">{assignment.scenario.profile}</Text>
-        </div>
-        <div className={`assignment-timer${timer.isLow ? ' assignment-timer--low' : ''}${timeLimitExceeded ? ' assignment-timer--exceeded' : ''}`}>
-          <IconClock size={21} stroke={1.8} aria-hidden="true" />
-          <div>
-            <Text size="xs">{timeLimitExceeded ? 'Превышение' : timer.label}</Text>
-            <Text className="assignment-timer__value" data-testid="assignment-timer">{timer.formatted}</Text>
+        <div className="assignment-brief__meta">
+          <div className="assignment-id">
+            <Text size="xs" c="dimmed">ID сессии / карточки</Text>
+            <Text className="assignment-id__value" title={assignment.session.id}>{assignment.session.id}</Text>
           </div>
+          <div className={`assignment-timer${timer.isLow ? ' assignment-timer--low' : ''}${timeLimitExceeded ? ' assignment-timer--exceeded' : ''}`}>
+            <IconClock size={19} stroke={1.8} aria-hidden="true" />
+            <div>
+              <Text size="xs">{timeLimitExceeded ? 'Превышение' : timer.label}</Text>
+              <Text className="assignment-timer__value" data-testid="assignment-timer">{timer.formatted}</Text>
+            </div>
+          </div>
+          {!report && saveStatus !== 'idle' && (
+            <Group className={`save-indicator save-indicator--${saveStatus}`} gap={6} wrap="nowrap">
+              <IconDeviceFloppy size={15} aria-hidden="true" />
+              <Text size="xs">{saveStatusText}</Text>
+            </Group>
+          )}
         </div>
       </Paper>
 
       {report ? (
         <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
       ) : (
-        <Paper component="form" className="incident-form" withBorder radius="lg" p="xl" onSubmit={submitCard} noValidate>
-          <div>
+        <Paper component="form" className="incident-form" withBorder radius="sm" p={0} onSubmit={submitCard} noValidate>
+          <div className="incident-form__heading">
             <Title order={2}>Карточка происшествия</Title>
-            <Text c="dimmed" size="sm" mt={5}>Поля со звёздочкой обязательны. Выводы Core недоступны для редактирования.</Text>
+            <Text size="xs">Поля со звёздочкой обязательны. Выводы Core недоступны для редактирования.</Text>
           </div>
-
           {submitError && (
             <Alert color="red" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setSubmitError('')}>
               {submitError}
             </Alert>
           )}
 
+          <div className="incident-form__workspace">
+            <div className="incident-form__column incident-form__column--left">
+          <section className="card-section" aria-labelledby="details-heading">
+            <div>
+              <Text className="section-eyebrow">Данные звонка</Text>
+              <Title id="details-heading" order={3}>Заявитель</Title>
+            </div>
+            <div className="incident-form__grid incident-form__grid--three">
+              <TextInput
+                label="ФИО заявителя"
+                placeholder="Необязательно"
+                value={caller.fullName ?? ''}
+                onChange={(event) => updateInput({
+                  ...input,
+                  caller: { ...caller, fullName: event.currentTarget.value || null },
+                })}
+              />
+              <TextInput
+                label="Телефон заявителя"
+                placeholder="+7 900 000-00-00"
+                type="tel"
+                value={phone}
+                onChange={(event) => updateInput({
+                  ...input,
+                  caller: {
+                    ...caller,
+                    phoneNumbers: event.currentTarget.value
+                      ? [{ value: event.currentTarget.value, kind: 'PROVIDED', foreign: false }]
+                      : [],
+                  },
+                })}
+              />
+              <Select
+                label="Статус заявителя"
+                placeholder="Выберите статус"
+                clearable
+                data={[
+                  { value: 'EYEWITNESS', label: 'Очевидец' },
+                  { value: 'VICTIM', label: 'Пострадавший' },
+                  { value: 'RELATIVE', label: 'Родственник' },
+                  { value: 'ACQUAINTANCE', label: 'Знакомый' },
+                  { value: 'CHILD', label: 'Ребёнок' },
+                  { value: 'PARTICIPANT', label: 'Участник' },
+                  { value: 'OTHER', label: 'Другое' },
+                ]}
+                value={caller.status}
+                onChange={(value) => updateInput({
+                  ...input,
+                  caller: { ...caller, status: value as CallerInput['status'] },
+                })}
+              />
+            </div>
+          </section>
+
+          <section className="card-section" aria-labelledby="address-heading">
+            <div>
+              <Text className="section-eyebrow">Место вызова</Text>
+              <Title id="address-heading" order={3}>Адрес происшествия</Title>
+              <Text size="sm" c="dimmed">Адрес сохраняется и строкой для отображения, и отдельными структурированными полями.</Text>
+            </div>
+            <TextInput
+              label="Адрес одной строкой"
+              placeholder="Город, улица, дом, корпус, квартира"
+              value={input.address?.displayAddress ?? ''}
+              onChange={(event) => updateInput({
+                ...input,
+                address: { ...(input.address ?? { displayAddress: '' }), displayAddress: event.currentTarget.value },
+              }, ['address'])}
+              error={errors.address}
+              required
+            />
+            <div className="structured-address-grid">
+              {([
+                ['region', 'Регион'],
+                ['locality', 'Населённый пункт'],
+                ['street', 'Улица'],
+                ['house', 'Дом'],
+                ['building', 'Корпус / строение'],
+                ['apartment', 'Квартира / помещение'],
+              ] as const).map(([field, label]) => (
+                <TextInput
+                  key={field}
+                  label={label}
+                  value={input.address?.[field] ?? ''}
+                  onChange={(event) => updateInput({
+                    ...input,
+                    address: {
+                      ...(input.address ?? { displayAddress: '' }),
+                      [field]: event.currentTarget.value || null,
+                    },
+                  })}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="card-section" aria-labelledby="description-heading">
+            <div>
+              <Text className="section-eyebrow">Обстоятельства</Text>
+              <Title id="description-heading" order={3}>Описание происшествия</Title>
+            </div>
+            <Textarea
+              label="Описание со слов заявителя"
+              description="Фиксируйте наблюдаемые факты, не подменяя ими тип происшествия."
+              placeholder="Что произошло, какие угрозы наблюдает заявитель"
+              minRows={4}
+              value={input.description ?? ''}
+              onChange={(event) => updateInput({ ...input, description: event.currentTarget.value })}
+            />
+          </section>
+
+          <section className="card-section" aria-labelledby="victims-heading">
+            <div>
+              <Text className="section-eyebrow">Сведения</Text>
+              <Title id="victims-heading" order={3}>Пострадавшие</Title>
+            </div>
+            <Radio.Group
+              label="Есть пострадавшие?"
+              value={input.victims === null ? '' : input.victims.present ? 'yes' : 'no'}
+              onChange={(value) => updateInput({
+                ...input,
+                victims: { present: value === 'yes', count: null, threatToPeople: null },
+              }, ['victims'])}
+              error={errors.victims}
+              required
+            >
+              <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
+            </Radio.Group>
+            {input.victims?.present && (
+              <div className="incident-form__grid">
+                <NumberInput
+                  label="Количество пострадавших"
+                  min={0}
+                  value={input.victims.count ?? ''}
+                  onChange={(value) => updateInput({
+                    ...input,
+                    victims: { ...input.victims!, count: typeof value === 'number' ? value : null },
+                  })}
+                />
+                <Radio.Group
+                  label="Есть угроза людям?"
+                  value={input.victims.threatToPeople === null || input.victims.threatToPeople === undefined
+                    ? '' : input.victims.threatToPeople ? 'yes' : 'no'}
+                  onChange={(value) => updateInput({
+                    ...input,
+                    victims: { ...input.victims!, threatToPeople: value === 'yes' },
+                  })}
+                >
+                  <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
+                </Radio.Group>
+              </div>
+            )}
+          </section>
+            </div>
+            <div className="incident-form__column incident-form__column--right">
+              <CalculationView calculation={calculation} />
           <section className="card-section" aria-labelledby="signs-heading">
             <div>
-              <Text className="section-eyebrow">Шаг 1</Text>
+              <Text className="section-eyebrow">Классификация</Text>
               <Title id="signs-heading" order={3}>Признаки происшествия</Title>
               <Text size="sm" c="dimmed">Каждый выбор запрашивает у Core следующий доступный уровень.</Text>
             </div>
@@ -572,7 +726,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
           {cardForm.questions.length > 0 && (
             <section className="card-section" aria-labelledby="questions-heading">
               <div>
-                <Text className="section-eyebrow">Шаг 2</Text>
+                <Text className="section-eyebrow">Уточнения</Text>
                 <Title id="questions-heading" order={3}>Дополнительные вопросы</Title>
                 <Text size="sm" c="dimmed">Набор вопросов зависит от выбранного пути признаков.</Text>
               </div>
@@ -649,161 +803,20 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
               </div>
             </section>
           )}
-
-          <section className="card-section" aria-labelledby="details-heading">
-            <div>
-              <Text className="section-eyebrow">Шаг 3</Text>
-              <Title id="details-heading" order={3}>Обстоятельства и заявитель</Title>
             </div>
-            <Textarea
-              label="Описание со слов заявителя"
-              description="Фиксируйте наблюдаемые факты, не подменяя ими тип происшествия."
-              placeholder="Что произошло, какие угрозы наблюдает заявитель"
-              minRows={4}
-              value={input.description ?? ''}
-              onChange={(event) => updateInput({ ...input, description: event.currentTarget.value })}
-            />
-            <div className="incident-form__grid incident-form__grid--three">
-              <TextInput
-                label="ФИО заявителя"
-                placeholder="Необязательно"
-                value={caller.fullName ?? ''}
-                onChange={(event) => updateInput({
-                  ...input,
-                  caller: { ...caller, fullName: event.currentTarget.value || null },
-                })}
-              />
-              <TextInput
-                label="Телефон заявителя"
-                placeholder="+7 900 000-00-00"
-                type="tel"
-                value={phone}
-                onChange={(event) => updateInput({
-                  ...input,
-                  caller: {
-                    ...caller,
-                    phoneNumbers: event.currentTarget.value
-                      ? [{ value: event.currentTarget.value, kind: 'PROVIDED', foreign: false }]
-                      : [],
-                  },
-                })}
-              />
-              <Select
-                label="Статус заявителя"
-                placeholder="Выберите статус"
-                clearable
-                data={[
-                  { value: 'EYEWITNESS', label: 'Очевидец' },
-                  { value: 'VICTIM', label: 'Пострадавший' },
-                  { value: 'RELATIVE', label: 'Родственник' },
-                  { value: 'ACQUAINTANCE', label: 'Знакомый' },
-                  { value: 'CHILD', label: 'Ребёнок' },
-                  { value: 'PARTICIPANT', label: 'Участник' },
-                  { value: 'OTHER', label: 'Другое' },
-                ]}
-                value={caller.status}
-                onChange={(value) => updateInput({
-                  ...input,
-                  caller: { ...caller, status: value as CallerInput['status'] },
-                })}
-              />
-            </div>
-          </section>
+          </div>
 
-          <section className="card-section" aria-labelledby="address-heading">
-            <div>
-              <Text className="section-eyebrow">Шаг 4</Text>
-              <Title id="address-heading" order={3}>Адрес происшествия</Title>
-              <Text size="sm" c="dimmed">Адрес сохраняется и строкой для отображения, и отдельными структурированными полями.</Text>
+          <div className="incident-form__footer">
+            <div className="incident-form__services" title={calculation?.services.map((service) => service.displayName).join(', ')}>
+              <strong>Службы:</strong> {calculation?.services.length
+                ? calculation.services.map((service) => service.displayName).join(', ')
+                : 'определяются Core'}
             </div>
-            <TextInput
-              label="Адрес одной строкой"
-              placeholder="Город, улица, дом, корпус, квартира"
-              value={input.address?.displayAddress ?? ''}
-              onChange={(event) => updateInput({
-                ...input,
-                address: { ...(input.address ?? { displayAddress: '' }), displayAddress: event.currentTarget.value },
-              }, ['address'])}
-              error={errors.address}
-              required
-            />
-            <div className="structured-address-grid">
-              {([
-                ['region', 'Регион'],
-                ['locality', 'Населённый пункт'],
-                ['street', 'Улица'],
-                ['house', 'Дом'],
-                ['building', 'Корпус / строение'],
-                ['apartment', 'Квартира / помещение'],
-              ] as const).map(([field, label]) => (
-                <TextInput
-                  key={field}
-                  label={label}
-                  value={input.address?.[field] ?? ''}
-                  onChange={(event) => updateInput({
-                    ...input,
-                    address: {
-                      ...(input.address ?? { displayAddress: '' }),
-                      [field]: event.currentTarget.value || null,
-                    },
-                  })}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="card-section" aria-labelledby="victims-heading">
-            <div>
-              <Text className="section-eyebrow">Шаг 5</Text>
-              <Title id="victims-heading" order={3}>Пострадавшие</Title>
-            </div>
-            <Radio.Group
-              label="Есть пострадавшие?"
-              value={input.victims === null ? '' : input.victims.present ? 'yes' : 'no'}
-              onChange={(value) => updateInput({
-                ...input,
-                victims: { present: value === 'yes', count: null, threatToPeople: null },
-              }, ['victims'])}
-              error={errors.victims}
-              required
-            >
-              <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
-            </Radio.Group>
-            {input.victims?.present && (
-              <div className="incident-form__grid">
-                <NumberInput
-                  label="Количество пострадавших"
-                  min={0}
-                  value={input.victims.count ?? ''}
-                  onChange={(value) => updateInput({
-                    ...input,
-                    victims: { ...input.victims!, count: typeof value === 'number' ? value : null },
-                  })}
-                />
-                <Radio.Group
-                  label="Есть угроза людям?"
-                  value={input.victims.threatToPeople === null || input.victims.threatToPeople === undefined
-                    ? '' : input.victims.threatToPeople ? 'yes' : 'no'}
-                  onChange={(value) => updateInput({
-                    ...input,
-                    victims: { ...input.victims!, threatToPeople: value === 'yes' },
-                  })}
-                >
-                  <Group mt="xs"><Radio value="yes" label="Да" /><Radio value="no" label="Нет" /></Group>
-                </Radio.Group>
-              </div>
-            )}
-          </section>
-
-          <CalculationView calculation={calculation} />
-
-          <Divider />
-          <Group justify="space-between" gap="md" className="incident-form__footer">
-            <Text size="xs" c="dimmed">После отправки изменить карточку будет нельзя.</Text>
+            <Text size="xs">После отправки изменить карточку будет нельзя.</Text>
             <Button type="submit" leftSection={<IconSend size={17} />} loading={isSubmitting}>
               Отправить на оценку
             </Button>
-          </Group>
+          </div>
         </Paper>
       )}
     </Stack>
