@@ -28,7 +28,13 @@ import {
   IconShieldCheck,
   IconX,
 } from '@tabler/icons-react';
-import type { CardCalculation, CallerInput, QuestionAnswer } from '../../api/types';
+import type {
+  CardCalculation,
+  CallerInput,
+  QuestionAnswer,
+  ServiceAssignment,
+  ServiceStatus,
+} from '../../api/types';
 import { getApiErrorMessage } from '../../api/errors';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { studentApi } from './api/studentApi';
@@ -229,60 +235,57 @@ function ReportView({
   );
 }
 
-function CalculationView({ calculation }: { calculation: CardCalculation | null }) {
-  if (!calculation) {
-    return (
-      <Paper className="calculation-panel" withBorder radius="lg" p="lg">
-        <Group gap="sm" align="flex-start" wrap="nowrap">
-          <ThemeIcon variant="light" color="blue"><IconRoute size={18} /></ThemeIcon>
-          <div>
-            <Text fw={650}>Тип происшествия</Text>
-            <Text size="sm" c="dimmed">Выберите признаки, чтобы Core определил тип и службы.</Text>
-          </div>
-        </Group>
-      </Paper>
-    );
-  }
+const serviceStatusMeta: Record<ServiceStatus, { label: string; tone: string }> = {
+  ADDED: { label: 'Назначена', tone: 'pending' },
+  RECEIVED: { label: 'Получено', tone: 'active' },
+  ACCEPTED: { label: 'Принято', tone: 'active' },
+  RESPONDING: { label: 'Реагирует', tone: 'active' },
+  ARRIVED: { label: 'На месте', tone: 'success' },
+  COMPLETED: { label: 'Завершено', tone: 'success' },
+  REFUSED: { label: 'Отказ', tone: 'danger' },
+  FAILED: { label: 'Ошибка', tone: 'danger' },
+};
 
-  const color = calculation.status === 'RESOLVED' ? 'teal' : calculation.status === 'NO_MATCH' ? 'red' : 'blue';
-  const statusLabel = calculation.status === 'RESOLVED'
-    ? 'Рассчитано'
-    : calculation.status === 'NO_MATCH' ? 'Совпадение не найдено' : 'Нужно уточнение';
+function CalculationView({ calculation }: { calculation: CardCalculation | null }) {
+  const color = !calculation ? 'gray'
+    : calculation.status === 'RESOLVED' ? 'teal' : calculation.status === 'NO_MATCH' ? 'red' : 'blue';
+  const statusLabel = !calculation ? 'Пусто'
+    : calculation.status === 'RESOLVED'
+      ? 'Рассчитано'
+      : calculation.status === 'NO_MATCH' ? 'Ошибка' : 'Заполняется';
   return (
     <Paper className="calculation-panel" withBorder radius="lg" p="lg" aria-label="Вычисленные поля Core">
       <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Text className="section-eyebrow">Только для чтения</Text>
-          <Title order={3}>Результат Core</Title>
-        </div>
+        <Group gap="sm" align="center" wrap="nowrap">
+          <ThemeIcon variant="light" color={color}><IconRoute size={18} /></ThemeIcon>
+          <div>
+            <Text className="section-eyebrow">Только для чтения</Text>
+            <Title order={3}>Результат Core</Title>
+          </div>
+        </Group>
         <Badge color={color} variant="light">{statusLabel}</Badge>
       </Group>
-      {calculation.incidentType && (
+      {!calculation ? (
+        <Text className="calculation-panel__placeholder" size="sm" c="dimmed">
+          Выберите признаки справа — тип происшествия и службы появятся без ручного ввода.
+        </Text>
+      ) : (
         <div className="calculation-summary">
           <div>
             <Text size="xs" c="dimmed">Тип происшествия</Text>
-            <Text fw={700}>{calculation.incidentType}</Text>
+            <Text fw={700}>{calculation.incidentType ?? 'Уточняется'}</Text>
           </div>
           <div>
             <Text size="xs" c="dimmed">Код классификатора</Text>
             <Text fw={700}>{calculation.classifierCode ?? '—'}</Text>
           </div>
-        </div>
-      )}
-      {calculation.services.length > 0 && (
-        <div>
-          <Text fw={650} size="sm" mb="xs">Назначенные службы</Text>
-          <div className="calculated-services">
-            {calculation.services.map((service) => (
-              <div className="calculated-service" key={service.id}>
-                <Text size="sm" fw={650}>{service.displayName}</Text>
-                <Text size="xs" c="dimmed">{service.reasons[0]?.message ?? 'Рассчитано Core.'}</Text>
-              </div>
-            ))}
+          <div>
+            <Text size="xs" c="dimmed">Службы ДДС</Text>
+            <Text fw={700}>{calculation.services.length || '—'}</Text>
           </div>
         </div>
       )}
-      {calculation.explanations.length > 0 && (
+      {calculation && calculation.explanations.length > 0 && (
         <Stack component="ul" gap={4} className="calculation-explanations">
           {calculation.explanations.map((explanation) => (
             <Text component="li" size="xs" c="dimmed" key={explanation}>{explanation}</Text>
@@ -290,6 +293,97 @@ function CalculationView({ calculation }: { calculation: CardCalculation | null 
         </Stack>
       )}
     </Paper>
+  );
+}
+
+function DispatchStrip({
+  calculation,
+  assignments,
+  submitted,
+  error,
+  isSubmitting,
+}: {
+  calculation: CardCalculation | null;
+  assignments: ServiceAssignment[];
+  submitted: boolean;
+  error: string;
+  isSubmitting: boolean;
+}) {
+  const phase = error ? 'error'
+    : submitted ? 'sent'
+      : calculation?.status === 'RESOLVED' ? 'calculated'
+        : calculation ? 'filling' : 'empty';
+  const phaseLabel = {
+    empty: 'Пусто',
+    filling: 'Заполняется',
+    calculated: 'Рассчитано',
+    sent: 'Отправлено',
+    error: 'Ошибка',
+  }[phase];
+  const calculatedServices = assignments.length === 0 ? calculation?.services ?? [] : [];
+  const hasServices = assignments.length > 0 || calculatedServices.length > 0;
+
+  return (
+    <footer className={`dispatch-strip dispatch-strip--${phase}`} aria-label="Рассчитанные службы ДДС">
+      <div className="dispatch-strip__lead">
+        <IconRoute size={18} aria-hidden="true" />
+        <strong>Службы ДДС</strong>
+        <span className="dispatch-strip__phase">{phaseLabel}</span>
+      </div>
+      <div className="dispatch-strip__services" role="list" aria-live="polite">
+        {assignments.map((assignment) => {
+          const status = assignment.overdue
+            ? { label: 'Нет реагирования', tone: 'danger' }
+            : serviceStatusMeta[assignment.status];
+          return (
+            <div
+              className={`dispatch-service dispatch-service--${status.tone}`}
+              key={assignment.id}
+              role="listitem"
+              aria-label={`${assignment.displayName}: ${status.label}`}
+              title={`${assignment.displayName}: ${status.label}`}
+            >
+              <span className="dispatch-service__name">{assignment.displayName}</span>
+              <span className="dispatch-service__status">{status.label}</span>
+            </div>
+          );
+        })}
+        {calculatedServices.map((service) => (
+          <div
+            className="dispatch-service dispatch-service--calculated"
+            key={service.id}
+            role="listitem"
+            aria-label={`${service.displayName}: рассчитана Core`}
+            title={service.reasons[0]?.message ?? 'Рассчитано Core'}
+          >
+            <span className="dispatch-service__name">{service.displayName}</span>
+            <span className="dispatch-service__status">Рассчитана</span>
+          </div>
+        ))}
+        {!hasServices && (
+          <Text className="dispatch-strip__placeholder" size="xs" title={error || undefined}>
+            {error ? 'Проверьте сообщение об ошибке в карточке.' : 'Службы появятся здесь после расчёта Core.'}
+          </Text>
+        )}
+      </div>
+      <div className="dispatch-strip__actions">
+        {submitted ? (
+          <Text size="xs">Карточка отправлена. Статусы служб доступны только для чтения.</Text>
+        ) : (
+          <>
+            <Text size="xs">После отправки изменить карточку будет нельзя.</Text>
+            <Button
+              form="student-incident-form"
+              type="submit"
+              leftSection={<IconSend size={17} />}
+              loading={isSubmitting}
+            >
+              Отправить на оценку
+            </Button>
+          </>
+        )}
+      </div>
+    </footer>
   );
 }
 
@@ -305,6 +399,8 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   const [errors, setErrors] = useState<CardErrors>({});
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serviceAssignments, setServiceAssignments] = useState<ServiceAssignment[]>([]);
+  const [serviceAssignmentsError, setServiceAssignmentsError] = useState('');
   const revisionRef = useRef(0);
   const changeIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -318,9 +414,16 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
     setLoadError('');
     setAssignment(null);
     setCardForm(null);
+    setServiceAssignments([]);
+    setServiceAssignmentsError('');
     try {
       const loaded = await api.getAssignment();
-      const form = await api.getCardForm(loaded.session.id);
+      const [formResult, assignmentsResult] = await Promise.allSettled([
+        api.getCardForm(loaded.session.id),
+        api.getServiceAssignments(loaded.session.id),
+      ]);
+      if (formResult.status === 'rejected') throw formResult.reason;
+      const form = formResult.value;
       const loadedInput = loaded.session.card.input;
       setAssignment(loaded);
       setCardForm(form);
@@ -335,6 +438,14 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
       lastEnqueuedRef.current = '';
       const hasDraft = loaded.session.cardRevision > 0;
       setSaveStatus(hasDraft ? 'saved' : 'idle');
+      if (assignmentsResult.status === 'fulfilled') {
+        setServiceAssignments(assignmentsResult.value);
+      } else {
+        setServiceAssignmentsError(getApiErrorMessage(
+          assignmentsResult.reason,
+          'Статусы служб ДДС временно недоступны.',
+        ));
+      }
     } catch (error) {
       setLoadError(getApiErrorMessage(error, 'Не удалось получить задание.'));
     }
@@ -473,6 +584,15 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
       const result = await api.submitCard(assignment.session.id, inputRef.current!, revisionRef.current);
       setReport(result);
       setCompletedAt(new Date().toISOString());
+      try {
+        setServiceAssignments(await api.getServiceAssignments(assignment.session.id));
+        setServiceAssignmentsError('');
+      } catch (assignmentsError) {
+        setServiceAssignmentsError(getApiErrorMessage(
+          assignmentsError,
+          'Карточка отправлена, но статусы служб ДДС временно недоступны.',
+        ));
+      }
     } catch (error) {
       setSubmitError(getApiErrorMessage(
         error,
@@ -528,10 +648,17 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
         </div>
       </Paper>
 
-      {report ? (
-        <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
-      ) : (
-        <Paper component="form" className="incident-form" withBorder radius="sm" p={0} onSubmit={submitCard} noValidate>
+      <>
+        <Paper
+          id="student-incident-form"
+          component="form"
+          className="incident-form"
+          withBorder
+          radius="sm"
+          p={0}
+          onSubmit={submitCard}
+          noValidate
+        >
           <div className="incident-form__heading">
             <Title order={2}>Карточка происшествия</Title>
             <Text size="xs">Поля со звёздочкой обязательны. Выводы Core недоступны для редактирования.</Text>
@@ -542,7 +669,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
             </Alert>
           )}
 
-          <div className="incident-form__workspace">
+          <fieldset className="incident-form__workspace" disabled={Boolean(report)}>
             <div className="incident-form__column incident-form__column--left">
           <section className="card-section" aria-labelledby="details-heading">
             <div>
@@ -804,21 +931,20 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
             </section>
           )}
             </div>
-          </div>
+          </fieldset>
 
-          <div className="incident-form__footer">
-            <div className="incident-form__services" title={calculation?.services.map((service) => service.displayName).join(', ')}>
-              <strong>Службы:</strong> {calculation?.services.length
-                ? calculation.services.map((service) => service.displayName).join(', ')
-                : 'определяются Core'}
-            </div>
-            <Text size="xs">После отправки изменить карточку будет нельзя.</Text>
-            <Button type="submit" leftSection={<IconSend size={17} />} loading={isSubmitting}>
-              Отправить на оценку
-            </Button>
-          </div>
         </Paper>
-      )}
+        {report && (
+          <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
+        )}
+      </>
+      <DispatchStrip
+        calculation={calculation}
+        assignments={serviceAssignments}
+        submitted={Boolean(report)}
+        error={serviceAssignmentsError || submitError}
+        isSubmitting={isSubmitting}
+      />
     </Stack>
   );
 }
