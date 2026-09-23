@@ -8,8 +8,22 @@ import type {
   StudentAssignment,
   StudentCardForm,
   StudentCardInput,
+  StudentServiceAssignment,
   StudentSession,
 } from './types';
+
+const serviceStatuses = new Set([
+  'ADDED',
+  'RECEIVED',
+  'ACCEPTED',
+  'RESPONDING',
+  'ARRIVED',
+  'COMPLETED',
+  'REFUSED',
+  'FAILED',
+]);
+
+const serviceStatusSources = new Set(['SYSTEM', 'MOCK', 'TEACHER', 'SERVICE']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -86,6 +100,66 @@ function normalizeAssignment(value: unknown): StudentAssignment {
   };
 }
 
+function normalizeServiceAssignments(value: unknown): StudentServiceAssignment[] {
+  if (!Array.isArray(value)) {
+    throw new ApiError('Core API вернул некорректный список служб ДДС.', { code: 'INVALID_RESPONSE' });
+  }
+  return value.map((assignment) => {
+    if (!isRecord(assignment)
+      || typeof assignment.id !== 'string'
+      || typeof assignment.sessionId !== 'string'
+      || typeof assignment.serviceId !== 'string'
+      || typeof assignment.displayName !== 'string'
+      || typeof assignment.cardRevision !== 'number'
+      || typeof assignment.status !== 'string'
+      || !serviceStatuses.has(assignment.status)
+      || typeof assignment.createdAt !== 'string'
+      || typeof assignment.updatedAt !== 'string'
+      || typeof assignment.deadlineAt !== 'string'
+      || !Array.isArray(assignment.history)
+      || typeof assignment.overdue !== 'boolean') {
+      throw new ApiError('Core API вернул некорректное назначение службы ДДС.', { code: 'INVALID_RESPONSE' });
+    }
+    const history = assignment.history.map((entry) => {
+      if (!isRecord(entry)
+        || typeof entry.eventId !== 'string'
+        || typeof entry.sequence !== 'number'
+        || (entry.fromStatus !== null
+          && (typeof entry.fromStatus !== 'string' || !serviceStatuses.has(entry.fromStatus)))
+        || typeof entry.status !== 'string'
+        || !serviceStatuses.has(entry.status)
+        || typeof entry.timestamp !== 'string'
+        || typeof entry.source !== 'string'
+        || !serviceStatusSources.has(entry.source)) {
+        throw new ApiError('Core API вернул некорректную историю службы ДДС.', { code: 'INVALID_RESPONSE' });
+      }
+      return {
+        eventId: entry.eventId,
+        sequence: entry.sequence,
+        fromStatus: entry.fromStatus as StudentServiceAssignment['history'][number]['fromStatus'],
+        status: entry.status as StudentServiceAssignment['status'],
+        timestamp: entry.timestamp,
+        source: entry.source as StudentServiceAssignment['history'][number]['source'],
+        comment: typeof entry.comment === 'string' ? entry.comment : null,
+        refusalReason: typeof entry.refusalReason === 'string' ? entry.refusalReason : null,
+      };
+    });
+    return {
+      id: assignment.id,
+      sessionId: assignment.sessionId,
+      serviceId: assignment.serviceId,
+      displayName: assignment.displayName,
+      cardRevision: assignment.cardRevision,
+      status: assignment.status as StudentServiceAssignment['status'],
+      createdAt: assignment.createdAt,
+      updatedAt: assignment.updatedAt,
+      deadlineAt: assignment.deadlineAt,
+      history,
+      overdue: assignment.overdue,
+    };
+  });
+}
+
 export function createStudentHttpApi(
   config: Pick<ApiConfig, 'baseUrl'>,
   http: HttpClient = createHttpClient(config.baseUrl),
@@ -132,6 +206,12 @@ export function createStudentHttpApi(
     async getCardForm(sessionId) {
       return normalizeCardForm(await http.request(
         `/api/student/sessions/${encodeURIComponent(sessionId)}/card-form`,
+      ));
+    },
+
+    async getServiceAssignments(sessionId) {
+      return normalizeServiceAssignments(await http.request(
+        `/api/student/sessions/${encodeURIComponent(sessionId)}/service-assignments`,
       ));
     },
 

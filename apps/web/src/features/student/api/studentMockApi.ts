@@ -4,7 +4,7 @@ import {
   studentDraftStorageKey,
   teacherSessionStorageKey,
 } from '../../../api/mockStorage';
-import type { CardCalculation, OperatorCard, Session } from '../../../api/types';
+import type { CardCalculation, OperatorCard, ServiceAssignment, Session } from '../../../api/types';
 import { scenarioFixtures } from '../../teacher/api/scenarios.fixture';
 import {
   assignedScenarioFixture,
@@ -178,6 +178,39 @@ function scoreCard(input: StudentCardInput, calculation: CardCalculation, sessio
   };
 }
 
+function createServiceAssignments(current: StoredStudentState): ServiceAssignment[] {
+  if (!current.report || !current.endedAt) return [];
+  const createdAt = current.endedAt;
+  const deadlineAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
+  return referenceRoutedServices.map((service, index) => {
+    const suffix = (index + 1).toString(16).padStart(12, '0');
+    const id = `10000000-0000-4000-8000-${suffix}`;
+    const eventId = `20000000-0000-4000-8000-${suffix}`;
+    return {
+      id,
+      sessionId: current.sessionId,
+      serviceId: service.id,
+      displayName: service.displayName,
+      cardRevision: current.cardRevision,
+      status: 'ADDED',
+      createdAt,
+      updatedAt: createdAt,
+      deadlineAt,
+      overdue: false,
+      history: [{
+        eventId,
+        sequence: 1,
+        fromStatus: null,
+        status: 'ADDED',
+        timestamp: createdAt,
+        source: 'SYSTEM',
+        comment: null,
+        refusalReason: null,
+      }],
+    };
+  });
+}
+
 export function createStudentMockApi(options: MockOptions = {}): StudentApi {
   const storage = options.storage === undefined ? getBrowserStorage() : options.storage;
   const delayMs = options.delayMs ?? 350;
@@ -284,6 +317,12 @@ export function createStudentMockApi(options: MockOptions = {}): StudentApi {
       const current = getContext().state;
       if (sessionId !== current.sessionId) throw new ApiError('Активная сессия не найдена.', { status: 404 });
       return respond(createReferenceCardForm(current.card.input.incident?.selectedSignIds));
+    },
+
+    async getServiceAssignments(sessionId) {
+      const current = getContext().state;
+      if (sessionId !== current.sessionId) throw new ApiError('Активная сессия не найдена.', { status: 404 });
+      return respond(createServiceAssignments(current));
     },
 
     async saveCard(requestSessionId, input, expectedRevision) {
