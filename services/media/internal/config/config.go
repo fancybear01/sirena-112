@@ -10,7 +10,9 @@ import (
 
 // Config holds Media Gateway runtime settings from the environment.
 type Config struct {
-	HTTPAddr string
+	HTTPAddr  string
+	Mode      string
+	AIBaseURL string
 
 	ARIBaseURL  string
 	ARIUsername string
@@ -31,6 +33,8 @@ type Config struct {
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
+		Mode:                  getEnv("MEDIA_MODE", "echo"),
+		AIBaseURL:             strings.TrimRight(getEnv("AI_BASE_URL", "ws://127.0.0.1:8090"), "/"),
 		HTTPAddr:              getEnv("MEDIA_HTTP_ADDR", ":8091"),
 		ARIBaseURL:            strings.TrimRight(getEnv("ARI_BASE_URL", "http://127.0.0.1:8088/ari"), "/"),
 		ARIUsername:           getEnv("ARI_USERNAME", ""),
@@ -61,6 +65,21 @@ func Load() (*Config, error) {
 
 // Validate checks required settings. Secrets are never included in the error text.
 func (c *Config) Validate() error {
+	if c.Mode != "" && c.Mode != "echo" && c.Mode != "ai" {
+		return fmt.Errorf("MEDIA_MODE must be echo or ai")
+	}
+	if c.Mode == "ai" {
+		u, err := url.Parse(c.AIBaseURL)
+		if err != nil || u.Host == "" || (u.Scheme != "ws" && u.Scheme != "wss") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("AI_BASE_URL must be a ws(s) URL without credentials or query")
+		}
+	}
+	if c.CoreBaseURL != "" {
+		u, err := url.Parse(c.CoreBaseURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("CORE_BASE_URL must be an HTTP(S) base URL")
+		}
+	}
 	if c.HTTPAddr == "" {
 		return fmt.Errorf("MEDIA_HTTP_ADDR is required")
 	}

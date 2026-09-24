@@ -36,6 +36,7 @@ type EventHandler func(evt ARIEvent)
 
 // ARIEvent is a normalized Asterisk event.
 type ARIEvent struct {
+	Payload   map[string]any
 	CallID    string
 	Type      string
 	ChannelID string
@@ -68,4 +69,13 @@ type RTPStats struct {
 // EchoFactory creates echo sessions bound to a UDP listen port.
 type EchoFactory interface {
 	Create(listenHost string, listenPort int) (EchoSession, int, error)
+}
+
+// VoiceSession is activated only once the SIP channel has answered.
+type VoiceSession interface {
+	Activate(StartCallRequest, func(ARIEvent)) error
+	Control(string) error
+}
+type CallController interface {
+	Control(context.Context, string, string) error
 }

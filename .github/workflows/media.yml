@@ -29,6 +29,15 @@ jobs:
       - name: Run tests
         working-directory: services/media
         run: go test ./...
+      - name: Set up Python for actual AI protocol test
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install AI transport dependencies
+        run: python -m pip install ./services/ai
+      - name: Test actual AI scripted voice protocol
+        working-directory: services/media
+        run: MEDIA_AI_PYTHON="$(command -v python)" go test -race -v ./internal/adapters/asterisk/rtp -run TestActualAIProtocol -count=1
       - name: Run vet
         working-directory: services/media
         run: go vet ./...
