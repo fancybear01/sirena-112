@@ -76,7 +76,13 @@ Media **не** ходит в PostgreSQL и не считает score.
 `POST /internal/v1/speech/play`  
 `POST /internal/v1/speech/cancel`
 
-MVP stub → `501 not_implemented` (до AI stream).
+`speech.play` → `501 not_implemented`. `speech.cancel` принимает `{ "callId": "..." }`
+и в AI-режиме отправляет `response.cancel`; в echo → `501`.
+
+### Явное завершение входной реплики
+
+`POST /internal/v1/calls/{callId}/input/flush` → `202`. Только ACTIVE AI-звонок.
+Пустой фрагмент или незавершённый предыдущий ответ → `400`; echo → `501`.
 
 ### Health
 
@@ -165,7 +171,7 @@ MVP stub → `501 not_implemented` (до AI stream).
 
 ## Явные ограничения MVP
 
-- нет AI WebSocket (контракт уже в `media-ai.md`);
+- AI WebSocket работает в явном режиме `ai`; pause detector пока заменён явным flush;
 - число одновременных звонков ограничено диапазоном `RTP_PORT`–`RTP_PORT_END`;
 - Пока Media публикует события только в log stub: для сквозного звонка нужно
   подключить его publisher к `POST /internal/v1/media/events` (#53 / смежная интеграция);

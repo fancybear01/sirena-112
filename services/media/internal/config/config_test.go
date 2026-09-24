@@ -56,3 +56,25 @@ func TestPortRangeConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceModeValidation(t *testing.T) {
+	t.Setenv("ARI_USERNAME", "media")
+	t.Setenv("ARI_PASSWORD", "secret")
+	t.Setenv("MEDIA_MODE", "echo")
+	t.Setenv("AI_BASE_URL", "")
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("echo must not require AI: %v", err)
+	}
+	t.Setenv("MEDIA_MODE", "ai")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("AI URL required")
+	}
+	t.Setenv("AI_BASE_URL", "ws://127.0.0.1:8090")
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MEDIA_MODE", "typo")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}

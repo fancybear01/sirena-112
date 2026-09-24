@@ -90,6 +90,11 @@ func (s *Service) handleEvent(rt *runtime, evt ports.ARIEvent) {
 	}
 	ctx := context.Background()
 	switch evt.Type {
+	case "transcript.final":
+		_ = s.publish(ctx, rt.call, "transcript.final", evt.Payload)
+	case "media.error":
+		_ = s.publish(ctx, rt.call, domain.EventMediaError, evt.Payload)
+		s.finish(ctx, rt, domain.CallStateFailed, domain.EventCallEnded, nil)
 	case "ChannelStateChange":
 		switch evt.State {
 		case "Ring", "Ringing":
@@ -99,6 +104,7 @@ func (s *Service) handleEvent(rt *runtime, evt ports.ARIEvent) {
 		}
 	case "ChannelDestroyed", "StasisEnd":
 		if evt.State == "Failed" {
+			_ = s.publish(ctx, rt.call, domain.EventMediaError, map[string]any{"message": "media channel failed"})
 			s.finish(ctx, rt, domain.CallStateFailed, domain.EventCallEnded, fmt.Errorf("media channel failed"))
 		} else {
 			s.finish(ctx, rt, domain.CallStateEnded, domain.EventCallEnded, nil)
@@ -336,6 +342,14 @@ func (s *Service) remove(rt *runtime) {
 }
 
 func (s *Service) publish(ctx context.Context, call *domain.Call, typ string, payload map[string]any) error {
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["callId"] = call.ID
+	payload["aiSessionId"] = call.AISessionID
+	if reason, ok := payload["error"]; ok {
+		payload["message"] = reason
+	}
 	evt := domain.Event{
 		EventID:   uuid.NewString(),
 		SessionID: call.SessionID,
@@ -344,5 +358,24 @@ func (s *Service) publish(ctx context.Context, call *domain.Call, typ string, pa
 		Source:    domain.EventSourceMedia,
 		Payload:   payload,
 	}
-	return s.core.Publish(ctx, evt)
+	err := s.core.Publish(ctx, evt)
+	if err != nil {
+		s.log.Error("media event rejected by publisher", "eventId", evt.EventID, "sessionId", call.SessionID, "callId", call.ID, "type", typ, "err", err)
+	}
+	return err
+}
+
+func (s *Service) Control(ctx context.Context, callID, typ string) error {
+	c, err := s.Get(callID)
+	if err != nil {
+		return err
+	}
+	if c.State != domain.CallStateActive {
+		return fmt.Errorf("%w: call is not ACTIVE", domain.ErrInvalidArgument)
+	}
+	control, ok := s.asterisk.(ports.CallController)
+	if !ok {
+		return domain.ErrNotImplemented
+	}
+	return control.Control(ctx, callID, typ)
 }

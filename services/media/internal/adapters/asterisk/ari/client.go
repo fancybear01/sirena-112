@@ -615,11 +615,23 @@ func (c *Client) runEvents(rt *callRuntime) {
 				evt.Type, evt.State = "ChannelStateChange", "Up"
 				if err != nil {
 					c.log.Error("add sip channel to bridge failed", "callId", rt.callID, "err", err)
-					evt.Type, evt.State = "ChannelDestroyed", "Failed"
+					evt.Type, evt.State = "media.error", "Failed"
+					evt.Payload = map[string]any{"message": "could not activate call media"}
 				}
 			}
+			var voice ports.VoiceSession
+			if evt.Type == "ChannelStateChange" && evt.State == "Up" {
+				voice, _ = rt.echo.(ports.VoiceSession)
+			}
+			req := ports.StartCallRequest{CallID: rt.callID, SessionID: rt.sessionID, AISessionID: rt.aiSessionID}
 			rt.mu.Unlock()
 			c.emit(evt)
+			// No ARI runtime lock during handshake: hangup can cancel it immediately.
+			if voice != nil {
+				if err := voice.Activate(req, c.enqueue); err != nil {
+					c.enqueue(ports.ARIEvent{CallID: rt.callID, Type: "media.error", Payload: map[string]any{"message": "AI stream activation failed"}})
+				}
+			}
 		}
 	}
 }
@@ -649,4 +661,26 @@ func truncate(b []byte) string {
 		return s[:256]
 	}
 	return s
+}
+
+func (c *Client) Control(ctx context.Context, callID, typ string) error {
+	c.mu.Lock()
+	rt := c.runtimes[callID]
+	c.mu.Unlock()
+	if rt == nil {
+		return domain.ErrCallNotFound
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.stopped {
+		return domain.ErrCallNotFound
+	}
+	voice, ok := rt.echo.(ports.VoiceSession)
+	if !ok {
+		return domain.ErrNotImplemented
+	}
+	if err := voice.Control(typ); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidArgument, err)
+	}
+	return nil
 }

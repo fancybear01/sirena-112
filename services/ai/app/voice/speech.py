@@ -15,6 +15,7 @@
 
 import os
 import struct
+import threading
 from array import array
 from typing import Optional, Protocol, Tuple
 
@@ -135,14 +136,20 @@ class PiperSynthesizer:
 
         self._voice = PiperVoice.load(model_path)
         self._native_rate = self._voice.config.sample_rate
+        self._lock = threading.Lock()
 
     def synthesize(self, text: str, sample_rate: int = SAMPLE_RATE) -> bytes:
         import io
         import wave
 
         buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as writer:
-            self._voice.synthesize_wav(text, writer)
+        # Синтез идёт под замком намеренно. Голосовые потоки работают в разных
+        # потоках, а фонемизатор Piper лежит в глобальной переменной модуля -
+        # одной на весь процесс. Пускать в неё два звонка разом нельзя.
+        # Event loop замок не держит: он в рабочем потоке, а не в обработчике.
+        with self._lock:
+            with wave.open(buffer, "wb") as writer:
+                self._voice.synthesize_wav(text, writer)
         buffer.seek(0)
         with wave.open(buffer, "rb") as reader:
             audio = reader.readframes(reader.getnframes())

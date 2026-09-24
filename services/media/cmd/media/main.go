@@ -13,6 +13,7 @@ import (
 	"github.com/fancybear01/sirena-112/services/media/internal/adapters/asterisk/rtp"
 	coreadapter "github.com/fancybear01/sirena-112/services/media/internal/adapters/core"
 	"github.com/fancybear01/sirena-112/services/media/internal/application/call"
+	"github.com/fancybear01/sirena-112/services/media/internal/application/ports"
 	"github.com/fancybear01/sirena-112/services/media/internal/config"
 	httpapi "github.com/fancybear01/sirena-112/services/media/internal/interfaces/http"
 	"github.com/fancybear01/sirena-112/services/media/internal/platform/logger"
@@ -25,7 +26,10 @@ func main() {
 	}
 	log := logger.New(cfg.LogLevel)
 
-	echoFactory := &rtp.Factory{Log: log}
+	var echoFactory ports.EchoFactory = &rtp.Factory{Log: log}
+	if cfg.Mode == "ai" {
+		echoFactory = &rtp.AIFactory{URL: cfg.AIBaseURL, Log: log}
+	}
 	ariClient := ari.NewClient(ari.Config{
 		BaseURL:       cfg.ARIBaseURL,
 		Username:      cfg.ARIUsername,
@@ -38,7 +42,12 @@ func main() {
 		EchoFactory:   echoFactory,
 		Log:           log,
 	})
-	publisher := coreadapter.NewLoggingPublisher(log)
+	var publisher ports.CoreEventPublisher = coreadapter.NewLoggingPublisher(log)
+	var httpPublisher *coreadapter.HTTPPublisher
+	if cfg.CoreBaseURL != "" {
+		httpPublisher = coreadapter.NewHTTPPublisher(cfg.CoreBaseURL, log)
+		publisher = httpPublisher
+	}
 	calls := call.NewService(ariClient, publisher, log)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -79,5 +88,12 @@ func main() {
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cleanupCancel()
 	calls.Shutdown(cleanupCtx)
+	if httpPublisher != nil {
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer drainCancel()
+		if err := httpPublisher.Close(drainCtx); err != nil {
+			log.Error("Core publisher drain failed", "err", err)
+		}
+	}
 	log.Info("media gateway stopped")
 }

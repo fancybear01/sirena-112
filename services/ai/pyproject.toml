@@ -22,6 +22,10 @@ dev = [
     "jsonschema>=4.21",
     "PyYAML>=6.0",
     "openapi-spec-validator>=0.9",
+    # Нужен тестам нагрузки: они поднимают настоящий uvicorn и подключаются
+    # к нему как Media. Приходит и вместе с uvicorn[standard], но полагаться
+    # на чужую необязательную зависимость не стоит.
+    "websockets>=12.0",
 ]
 
 [tool.setuptools.packages.find]

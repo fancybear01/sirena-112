@@ -32,7 +32,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/v1/calls/hangup", h.hangupCall)
 	mux.HandleFunc("GET /internal/v1/calls/{callId}", h.getCall)
 	mux.HandleFunc("POST /internal/v1/speech/play", h.speechStub)
-	mux.HandleFunc("POST /internal/v1/speech/cancel", h.speechStub)
+	mux.HandleFunc("POST /internal/v1/speech/cancel", h.cancelSpeech)
+	mux.HandleFunc("POST /internal/v1/calls/{callId}/input/flush", h.flushInput)
 	return withRequestID(mux)
 }
 
@@ -128,6 +129,8 @@ func (h *Handler) speechStub(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) mapError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, domain.ErrNotImplemented):
+		writeErr(w, http.StatusNotImplemented, "not_implemented", err.Error())
 	case errors.Is(err, domain.ErrInvalidArgument):
 		writeErr(w, http.StatusBadRequest, "invalid_argument", err.Error())
 	case errors.Is(err, domain.ErrCallNotFound):
@@ -171,4 +174,24 @@ func withRequestID(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-Id", id)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (h *Handler) flushInput(w http.ResponseWriter, r *http.Request) {
+	if err := h.calls.Control(r.Context(), r.PathValue("callId"), "input.flush"); err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "flushed"})
+}
+func (h *Handler) cancelSpeech(w http.ResponseWriter, r *http.Request) {
+	var req HangupCallRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CallID == "" {
+		writeErr(w, 400, "invalid_argument", "callId required")
+		return
+	}
+	if err := h.calls.Control(r.Context(), req.CallID, "response.cancel"); err != nil {
+		h.mapError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "cancelled"})
 }

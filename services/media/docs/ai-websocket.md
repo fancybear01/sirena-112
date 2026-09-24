@@ -1,127 +1,162 @@
-# Как Media будет подключаться к AI
+# Рабочий мост Media ↔ AI
 
-Это описание следующего этапа, а не уже включённый режим. Сейчас Media
-выполняет RTP echo. В Python нет voice WebSocket и API создания голосовой
-AI-сессии: существующий `/ai/dialogue/respond` работает с текстом и переданным
-состоянием. Добавление одного URL в настройки Media не включит голосовой AI.
+Media поддерживает `MEDIA_MODE=echo|ai` (по умолчанию `echo`). Echo не требует
+AI и сохраняет существующий `scripts/smoke.sh`. Автоматического переключения
+живого AI-звонка в echo нет: ошибка AI завершает звонок с диагностикой в Core.
 
-Источник формата сообщений: [`contracts/media-ai.md`](../../../contracts/media-ai.md).
+## Поток звонка
 
-## Кто устанавливает соединение
+1. Core создаёт голосовую AI-сессию и передаёт `sessionId`, `aiSessionId`,
+   `sipAddress` в Media. Для полного сценария используйте Core API, а не
+   выдуманные идентификаторы из standalone echo smoke.
+2. После ответа SIP-канала и подключения bridge Media открывает один
+   `{AI_BASE_URL}/internal/v1/voice/{aiSessionId}?sessionId=...`.
+3. До аудио отправляется один JSON `stream.start` (PCM16 LE, mono, 16000 Hz,
+   20 ms). Контекст принадлежит звонку, не HTTP-запросу start.
+4. RTP PCMU 8 кГц проходит декодирование и потоковый FIR-ресемплер до 16 кГц.
+   Границы RTP сохраняются в непрерывном sample stream; на WS уходят блоки
+   ровно по 640 байт. FIR хранит историю между пакетами.
+5. `POST /internal/v1/calls/{callId}/input/flush` явно завершает реплику.
+   Неполный входной PCM-кадр дополняется нулями. Пустой flush отклоняется.
+6. AI молчит на отдельные входные кадры. После flush reader принимает
+   `transcript.final`, `response.started` (JSON, не звук), binary PCM,
+   `response.completed`, `caller.state_changed`. JSON никогда не попадает в
+   аудиоконвертер. `simulated` и временные границы транскрипта сохраняются.
+7. PCM-ответ фильтруется перед децимацией до 8 кГц и кодируется в μ-law.
+   Пакеты по 160 байт отправляются раз в 20 мс. Sequence растёт по отправленным
+   пакетам, timestamp — по 8-кГц sample clock, SSRC постоянен в пределах звонка.
+   Последний неполный выходной пакет дополняется μ-law тишиной.
 
-Go Media — WebSocket-клиент, Python AI — WebSocket-сервер.
-Один звонок использует одно двунаправленное соединение. Core передаёт
-идентификаторы и сценарный контекст; аудио через Core не проходит.
+Ресемплер: 63-tap windowed-sinc FIR, cutoff 3.4 кГц при 16 кГц, задержка
+31 отсчёт на направление. Тесты проверяют непрерывность, тишину, искажения
+кругового преобразования и подавление 6-кГц компоненты перед downsampling.
+Это узкополосный телефонный канал: исходных частот выше 4 кГц в PCMU нет.
 
-1. Core создаёт голосовую сессию в AI, передавая разрешённый контекст сценария.
-   HTTP endpoint создания сессии ещё нужно согласовать и реализовать с AI/Core.
-2. AI возвращает `aiSessionId`. Core передаёт его вместе с `sessionId` и
-   `sipAddress` в существующий `POST /internal/v1/calls/start` Media.
-3. После ответа SIP-абонента и подключения канала к bridge Media открывает:
+## Границы реплик и отмена
 
-   ```text
-   ws://ai:8090/internal/v1/voice/{aiSessionId}?sessionId={sessionId}
-   ```
+Текущий режим использует **явный flush**, без VAD. Завершайте фрагмент раньше
+лимита AI в 30 секунд. Пока AI отвечает и очередь проигрывается, входящие RTP
+дренируются и отбрасываются: следующий ход не смешивается с текущим ответом.
+Автоматическое определение перебивания не реализовано.
 
-   `ai` — предполагаемое имя сервиса в Docker-сети; в текущем Compose этого
-   сервиса ещё нет. Если оба процесса запущены на хосте, адрес будет
-   `ws://127.0.0.1:8090/...`. Для Media в Docker и AI на Mac нужен
-   `ws://host.docker.internal:8090/...`, а Python должен слушать доступный
-   контейнеру адрес. Для TLS используется `wss://`.
-4. Python проверяет, что сессия существует, активна и принадлежит указанному
-   `sessionId`, и только затем принимает WebSocket upgrade.
-5. Первое сообщение Media — **текстовый JSON**:
+`POST /internal/v1/speech/cancel` с `{"callId":"..."}` отправляет
+`response.cancel`, сбрасывает недоигранный PCM и ждёт
+`response.completed` с `cancelled:true`. До подтверждения оставшийся звук
+старого ответа игнорируется. После подтверждения можно записывать новый ход.
 
-   ```json
-   {
-     "type": "stream.start",
-     "sessionId": "s1",
-     "aiSessionId": "ai1",
-     "audio": {
-       "encoding": "pcm_s16le",
-       "sampleRate": 16000,
-       "channels": 1,
-       "frameDurationMs": 20
-     }
-   }
-   ```
+## Очереди, ошибки, завершение
 
-6. После него Media отправляет аудио бинарными WebSocket-сообщениями. В них
-   нет RTP-заголовков, WAV-заголовков, JSON или base64 — только PCM.
+- Handshake и каждая запись WS ограничены 3 секундами.
+- У WS один writer и один reader; очередь записи — 64 сообщения.
+- Очередь RTP playback — 500 кадров / 10 секунд. Переполнение любой аудиоочереди
+  становится ошибкой, а не бесконечным накоплением задержки.
+- Reader обрабатывает большой PCM блок небольшими порциями, не удерживая
+  блокировку UDP на всём ответе. ARI использует отдельные очереди звонков.
+- Ping/pong и read deadline 60 секунд обнаруживают потерянное соединение.
+- На hangup/disconnect выполняется best-effort `stream.stop` (не более 300 мс),
+  затем закрываются WS и UDP, завершаются reader/writer/playback и удаляются
+  SIP channel, externalMedia и bridge. Неудачный ARI cleanup повторяется фоном.
+- AI `error` обрабатывается как ошибка текущего звонка. В частности,
+  `speech.unavailable` означает отсутствие моделей, а не реальное распознавание.
+  Для проверки без моделей запускайте scripted/silence сервер ниже.
+- При `caller.state_changed` с `hangUp:true` сначала доигрывается очередь
+  ответа, затем завершается звонок. SIP hangup прекращает звук сразу.
 
-## Что нужно реализовать в Go
+## Доставка событий в Core
 
-Уже используемый `github.com/gorilla/websocket` подходит для клиента.
-Соединение открывается через `DialContext` с ограниченным временем handshake.
-Адрес и query собираются с экранированием `aiSessionId` и `sessionId`.
-Контекст соединения принадлежит звонку: контекст HTTP-запроса start завершится
-раньше разговора, поэтому использовать его как lifetime потока нельзя.
+`CORE_BASE_URL=http://...:8080` включает HTTP publisher на существующий
+`POST /internal/v1/media/events`. Пустая настройка оставляет logging publisher
+для независимого echo smoke. В Compose настройка называется `MEDIA_CORE_BASE_URL`.
 
-В `application` нужен порт AI-потока; WebSocket-клиент и JSON-протокол живут
-в adapter. Поток запускается один раз при переходе звонка в ACTIVE.
-Настройки адреса AI и режима echo/AI следует добавить при включении адаптера;
-сейчас неиспользуемых AI-переменных в Media нет.
+Публикуются `call.ringing`, `call.answered`, `call.ended`, `transcript.final`,
+`media.error`. Envelope сохраняет `eventId`, `sessionId`, `timestamp`,
+`source=media`; payload содержит `callId` и `aiSessionId`. PCM не публикуется
+и не логируется, доступа к PostgreSQL из Media нет.
 
-Для каждого потока:
+Publisher имеет очередь 256 событий, timeout HTTP 2 секунды и до трёх попыток
+для сетевых/5xx/429/409 ошибок. Повтор отправляет те же сериализованные байты,
+включая eventId. Core дедуплицирует и не откатывает терминальную сессию из-за
+поздних lifecycle-событий. При исчерпании повторов или очереди ошибка логируется;
+постоянного outbox нет, поэтому гарантий доставки через рестарт Media нет.
 
-- один writer отправляет сначала `stream.start`, затем аудио и команды из
-  ограниченной очереди; несколько goroutine не пишут в WebSocket одновременно;
-- один reader различает binary PCM и text JSON;
-- отдельная очередь воспроизведения выдаёт RTP в реальном времени;
-- отмена звонка останавливает reader, writer и воспроизведение;
-- при переполнении очереди действует явная политика: для первой версии лучше
-  завершить поток с ошибкой, чем накапливать растущую задержку без ограничения;
-- deadline записи и ping/pong позволяют заметить недоступный AI.
+## Автоматические проверки
 
-## Преобразование аудио
+Из корня:
 
-Вход от Asterisk:
-
-```text
-RTP PCMU, 8 кГц
-  → извлечение μ-law payload
-  → декодирование PCM16, 8 кГц
-  → ресемплинг до 16 кГц
-  → сборка кадров по 20 мс / 640 байт
-  → binary WebSocket в AI
+```bash
+cd services/media
+go test -race ./...
+go vet ./...
+go build ./cmd/media
 ```
 
-Обратное направление:
+`tests/voicefixture` теперь использует рабочий WS-клиент: два хода без ответов
+на отдельные входные кадры, текстовые события до/после PCM, `stream.stop`.
+Тесты ARI/RTP дополнительно проверяют pacing, переполнение, disconnect, cleanup
+всех ARI-ресурсов и повторный звонок на том же порту.
 
-```text
-binary PCM16 LE mono, 16 кГц от AI
-  → буферизация и разбиение на кадры
-  → ресемплинг с фильтрацией до 8 кГц
-  → μ-law, 160 байт на 20 мс
-  → RTP с собственными sequence/timestamp/SSRC
-  → отправка по таймеру каждые 20 мс в Asterisk
+Проверка **текущего Python AI**, без моделей, Docker и softphone:
+
+```bash
+# из корня
+python3 -m venv /tmp/sirena-ai-test-env
+/tmp/sirena-ai-test-env/bin/pip install ./services/ai
+cd services/media
+MEDIA_AI_PYTHON=/tmp/sirena-ai-test-env/bin/python \
+  go test -race -v ./internal/adapters/asterisk/rtp -run TestActualAIProtocol -count=1
 ```
 
-AI может прислать большой фрагмент синтезированной речи сразу. Нельзя отправить
-весь этот фрагмент в RTP одним залпом. Текущий echo отвечает при получении
-входных пакетов, а AI-воспроизведение должно работать независимо от того,
-говорит ли сейчас оператор.
+Тест запускает настоящий AI app с его `ScriptedRecognizer` и
+`SilenceSynthesizer`. Проверяются два хода, два последовательных звонка,
+`simulated:true`, корреляция и равномерный RTP. Ответом должна быть тишина.
+Это также отдельный шаг существующего CI `media / test-build`.
 
-Текущие `ULAWToPCM`/`PCMToULAW` выполняют только преобразование кодека;
-частоту дискретизации они не меняют. Нужен потоковый ресемплер с сохранением
-состояния между кадрами.
+С установленными Vosk/Piper и настроенными `AI_STT`, `AI_STT_MODEL`, `AI_TTS`,
+`AI_TTS_MODEL` добавьте `MEDIA_AI_REAL=1` к той же команде. Тогда тест берёт
+операторские WAV из AI fixtures и требует `simulated:false`. Настройка моделей:
+[`docs/voice-readiness.md`](../../../docs/voice-readiness.md).
 
-## События, перебивание и завершение
+## Softphone smoke с событиями Core
 
-Reader передаёт `transcript.partial`, `transcript.final` и другие текстовые
-события в application. Media добавляет envelope (`eventId`, `sessionId`,
-`timestamp`, `source: media`) и публикует в Core. Сейчас publisher только
-логирует; реальный HTTP ingest в Core нужен отдельно.
+1. Поднимите AI (с моделями либо тестовый сервер):
 
-При перебивании writer отправляет `response.cancel`, а Media сбрасывает
-очередь ещё не проигранного AI-аудио. Семантику оставшихся в пути кадров и
-момент завершения отмены нужно согласовать с AI: текущий контракт не задаёт
-response ID в бинарных кадрах, поэтому привязку к старой/новой реплике нельзя
-просто предположить.
+   ```bash
+   /tmp/sirena-ai-test-env/bin/python services/media/scripts/ai-test-server.py --port 8090
+   ```
 
-При штатном hangup writer пытается отправить `stream.stop` с коротким timeout,
-затем соединение и остальные ресурсы звонка закрываются. Ошибка AI, потеря
-соединения или некорректный формат вызывают `system.error` и cleanup звонка.
-Для первого рабочего режима достаточно завершать звонок при потере AI;
-автоматическое продолжение диалога после reconnect требует отдельной политики
-восстановления состояния и не должно дублировать уже проигранную речь.
+   Сервер слушает loopback. Если AI на Mac, а Core/Media внутри Docker,
+   запустите AI на доступном контейнерам адресе (см. флаг `--host` скрипта).
+
+2. В `.env` задайте:
+
+   ```dotenv
+   MEDIA_MODE=ai
+   MEDIA_AI_BASE_URL=ws://host.docker.internal:8090
+   MEDIA_CORE_BASE_URL=http://core:8080
+   CORE_AI_BASE_URL=http://host.docker.internal:8090
+   CORE_MEDIA_MODE=http
+   ```
+
+3. `docker compose up -d --build postgres core asterisk media`.
+   Зарегистрируйте softphone 1001 по инструкции Asterisk. Создайте через Core/UI
+   две разные READY VOICE-сессии: завершённую бизнес-сессию повторно не запускают.
+4. Запустите:
+
+   ```bash
+   python3 services/media/scripts/smoke_ai.py --session FIRST_UUID --session SECOND_UUID
+   ```
+
+   Ответьте на звонок и говорите по подсказкам. Скрипт явно делает два flush,
+   проверяет транскрипты и lifecycle в Core, затем повторяет звонок для второй
+   сессии без рестарта Media. В scripted режиме звук — тишина; с моделями — речь.
+5. После отбоя проверьте `docker compose exec asterisk asterisk -rx "core show channels"`
+   и `docker compose exec asterisk asterisk -rx "bridge show all"`.
+
+Для проверки disconnect во время звонка остановите AI: Core должен получить
+`media.error`, ARI-ресурсы должны исчезнуть. После возврата AI создайте новую
+VOICE-сессию и повторите smoke. Для диагностического возврата к echo установите
+`MEDIA_MODE=echo`, очистите `MEDIA_CORE_BASE_URL` и пересоздайте Media, затем
+выполните прежний `bash services/media/scripts/smoke.sh`.
+
+Результаты локальной проверки: [validation](ai-validation.md).
+PR не создан: по указанию владельца изменения остаются локально.
