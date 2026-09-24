@@ -6,7 +6,10 @@ import {
   type OperatorCard,
   type RoutedService,
   type Scenario,
+  type ServiceAssignment,
+  type ServiceStatus,
   type Session,
+  type SessionEvent,
   type SessionReport,
   type SessionState,
 } from './types';
@@ -14,6 +17,13 @@ import {
 const sessionStates: SessionState[] = [
   'CREATED', 'READY', 'RINGING', 'ACTIVE', 'COMPLETED', 'SCORING', 'SCORED', 'FAILED',
 ];
+
+const serviceStatuses = new Set<ServiceStatus>([
+  'ADDED', 'RECEIVED', 'ACCEPTED', 'RESPONDING', 'ARRIVED', 'COMPLETED', 'REFUSED', 'FAILED',
+]);
+
+const serviceStatusSources = new Set(['SYSTEM', 'MOCK', 'TEACHER', 'SERVICE']);
+const sessionEventSources = new Set<SessionEvent['source']>(['core', 'media', 'ai', 'any']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -185,4 +195,85 @@ export function normalizeReport(value: unknown): SessionReport {
     throw new ApiError('Core API вернул некорректный отчёт.', { code: 'INVALID_RESPONSE' });
   }
   return value as SessionReport;
+}
+
+export function normalizeServiceAssignments(value: unknown): ServiceAssignment[] {
+  if (!Array.isArray(value)) {
+    throw new ApiError('Core API вернул некорректный список служб ДДС.', { code: 'INVALID_RESPONSE' });
+  }
+  return value.map((assignment) => {
+    if (!isRecord(assignment)
+      || typeof assignment.id !== 'string'
+      || typeof assignment.sessionId !== 'string'
+      || typeof assignment.serviceId !== 'string'
+      || typeof assignment.displayName !== 'string'
+      || typeof assignment.cardRevision !== 'number'
+      || typeof assignment.status !== 'string'
+      || !serviceStatuses.has(assignment.status as ServiceStatus)
+      || typeof assignment.createdAt !== 'string'
+      || typeof assignment.updatedAt !== 'string'
+      || typeof assignment.deadlineAt !== 'string'
+      || !Array.isArray(assignment.history)
+      || typeof assignment.overdue !== 'boolean') {
+      throw new ApiError('Core API вернул некорректное назначение службы ДДС.', { code: 'INVALID_RESPONSE' });
+    }
+    const history = assignment.history.map((entry) => {
+      if (!isRecord(entry)
+        || typeof entry.eventId !== 'string'
+        || typeof entry.sequence !== 'number'
+        || (entry.fromStatus !== null
+          && (typeof entry.fromStatus !== 'string' || !serviceStatuses.has(entry.fromStatus as ServiceStatus)))
+        || typeof entry.status !== 'string'
+        || !serviceStatuses.has(entry.status as ServiceStatus)
+        || typeof entry.timestamp !== 'string'
+        || typeof entry.source !== 'string'
+        || !serviceStatusSources.has(entry.source)) {
+        throw new ApiError('Core API вернул некорректную историю службы ДДС.', { code: 'INVALID_RESPONSE' });
+      }
+      return {
+        eventId: entry.eventId,
+        sequence: entry.sequence,
+        fromStatus: entry.fromStatus as ServiceAssignment['history'][number]['fromStatus'],
+        status: entry.status as ServiceStatus,
+        timestamp: entry.timestamp,
+        source: entry.source as ServiceAssignment['history'][number]['source'],
+        comment: typeof entry.comment === 'string' ? entry.comment : null,
+        refusalReason: typeof entry.refusalReason === 'string' ? entry.refusalReason : null,
+      };
+    });
+    return {
+      id: assignment.id,
+      sessionId: assignment.sessionId,
+      serviceId: assignment.serviceId,
+      displayName: assignment.displayName,
+      cardRevision: assignment.cardRevision,
+      status: assignment.status as ServiceStatus,
+      createdAt: assignment.createdAt,
+      updatedAt: assignment.updatedAt,
+      deadlineAt: assignment.deadlineAt,
+      history,
+      overdue: assignment.overdue,
+    };
+  });
+}
+
+export function normalizeSessionEvent(value: unknown): SessionEvent {
+  if (!isRecord(value)
+    || typeof value.eventId !== 'string'
+    || typeof value.sessionId !== 'string'
+    || typeof value.type !== 'string'
+    || typeof value.timestamp !== 'string'
+    || typeof value.source !== 'string'
+    || !sessionEventSources.has(value.source as SessionEvent['source'])
+    || !isRecord(value.payload)) {
+    throw new ApiError('Core API вернул некорректное событие сессии.', { code: 'INVALID_RESPONSE' });
+  }
+  return {
+    eventId: value.eventId,
+    sessionId: value.sessionId,
+    type: value.type,
+    timestamp: value.timestamp,
+    source: value.source as SessionEvent['source'],
+    payload: value.payload,
+  };
 }

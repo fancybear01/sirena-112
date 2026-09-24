@@ -15,13 +15,17 @@ import {
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import { getApiErrorMessage } from '../../api/errors';
 import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
+import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
-import { teacherApi } from './api/teacherApi';
+import { teacherApi, teacherSessionEvents } from './api/teacherApi';
 import type {
   ScenarioDifficulty,
   TeacherApi,
+  TeacherLiveConnectionState,
   TeacherScenario,
+  TeacherServiceAssignment,
   TeacherSession,
+  TeacherSessionEvents,
 } from './api/types';
 
 type DifficultyFilter = 'ALL' | ScenarioDifficulty;
@@ -36,6 +40,42 @@ const statusLabels: Record<TeacherScenario['status'], string> = {
   READY: 'Готов',
   DRAFT: 'Черновик',
 };
+
+const serviceStatusLabels: Record<ServiceStatus, string> = {
+  ADDED: 'Назначена',
+  RECEIVED: 'Получена',
+  ACCEPTED: 'Принята',
+  RESPONDING: 'Следует к месту',
+  ARRIVED: 'Прибыла',
+  COMPLETED: 'Завершена',
+  REFUSED: 'Отказ',
+  FAILED: 'Ошибка',
+};
+
+const serviceStatusColors: Record<ServiceStatus, string> = {
+  ADDED: 'gray',
+  RECEIVED: 'blue',
+  ACCEPTED: 'cyan',
+  RESPONDING: 'indigo',
+  ARRIVED: 'violet',
+  COMPLETED: 'teal',
+  REFUSED: 'orange',
+  FAILED: 'red',
+};
+
+const liveStateLabels: Record<TeacherLiveConnectionState, string> = {
+  connecting: 'Подключение',
+  connected: 'Онлайн',
+  reconnecting: 'Переподключение',
+  polling: 'Опрос Core',
+};
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
+}
 
 function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -68,11 +108,24 @@ function useSessionTimer(session: TeacherSession | null) {
   return formatDuration(elapsedSeconds);
 }
 
-export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
+type TeacherPageProps = {
+  api?: TeacherApi;
+  sessionEvents?: TeacherSessionEvents;
+  pollIntervalMs?: number;
+};
+
+export function TeacherPage({
+  api = teacherApi,
+  sessionEvents = teacherSessionEvents,
+  pollIntervalMs = 3000,
+}: TeacherPageProps) {
   const [scenarios, setScenarios] = useState<TeacherScenario[] | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('ALL');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [session, setSession] = useState<TeacherSession | null>(null);
+  const [serviceAssignments, setServiceAssignments] = useState<TeacherServiceAssignment[] | null>(null);
+  const [assignmentsError, setAssignmentsError] = useState('');
+  const [liveState, setLiveState] = useState<TeacherLiveConnectionState>('connecting');
   const [listError, setListError] = useState('');
   const [operationError, setOperationError] = useState('');
   const [isLaunching, setIsLaunching] = useState(false);
@@ -106,19 +159,71 @@ export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
   }, [loadScenarios]);
 
   useEffect(() => {
-    if (!session || session.state !== 'ACTIVE') return;
-    let checking = false;
-    const intervalId = window.setInterval(() => {
-      if (checking) return;
-      checking = true;
-      void api.getCurrentSession().then((current) => {
-        if (current?.id === session.id) setSession(current);
-      }).catch(() => {
-        // Keep the visible session and retry; a short network outage must not erase it.
-      }).finally(() => { checking = false; });
-    }, 3000);
-    return () => window.clearInterval(intervalId);
-  }, [api, session?.id, session?.state]);
+    const sessionId = session?.id;
+    if (!sessionId) {
+      setServiceAssignments(null);
+      setAssignmentsError('');
+      return;
+    }
+
+    let disposed = false;
+    let refreshInFlight = false;
+    let refreshPending = false;
+
+    const refreshSnapshot = async (showAssignmentError = false) => {
+      if (refreshInFlight) {
+        refreshPending = true;
+        return;
+      }
+      refreshInFlight = true;
+      do {
+        refreshPending = false;
+        const results: [
+          PromiseSettledResult<TeacherSession | null>,
+          PromiseSettledResult<TeacherServiceAssignment[]>,
+        ] = await Promise.allSettled([
+          api.getCurrentSession(),
+          api.getServiceAssignments(sessionId),
+        ]);
+        const sessionResult = results[0];
+        const assignmentsResult = results[1];
+        if (disposed) return;
+
+        if (sessionResult.status === 'fulfilled') {
+          if (sessionResult.value === null) setSession(null);
+          else if (sessionResult.value.id === sessionId) setSession(sessionResult.value);
+        }
+
+        if (assignmentsResult.status === 'fulfilled') {
+          setServiceAssignments(assignmentsResult.value.filter((item) => item.sessionId === sessionId));
+          setAssignmentsError('');
+        } else if (showAssignmentError) {
+          setAssignmentsError(getApiErrorMessage(
+            assignmentsResult.reason,
+            'Не удалось загрузить назначения служб. Повторим автоматически.',
+          ));
+        }
+      } while (refreshPending && !disposed);
+      refreshInFlight = false;
+    };
+
+    setServiceAssignments(null);
+    setAssignmentsError('');
+    void refreshSnapshot(true);
+
+    const unsubscribe = sessionEvents.subscribe(
+      sessionId,
+      () => { void refreshSnapshot(); },
+      setLiveState,
+    );
+    const intervalId = window.setInterval(() => { void refreshSnapshot(); }, pollIntervalMs);
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+      window.clearInterval(intervalId);
+    };
+  }, [api, pollIntervalMs, session?.id, sessionEvents]);
 
   const visibleScenarios = useMemo(() => (
     scenarios?.filter((scenario) => difficulty === 'ALL' || scenario.difficulty === difficulty) ?? []
@@ -245,12 +350,29 @@ export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
               <div className={`teacher-panel-slot${session ? ' teacher-panel-slot--session' : ''}`}>
                 {session ? (
                   <Paper className="session-panel" withBorder radius="lg" p="xl">
-                  <Group justify="space-between" mb="xl">
+                  <Group justify="space-between" mb="xl" align="flex-start">
                     <Text fw={650}>Учебная сессия</Text>
-                    <Badge color={session.state === 'ACTIVE' ? 'teal' : 'gray'} variant="light" size="lg">
-                      {session.state}
-                    </Badge>
+                    <Group gap="xs" justify="flex-end">
+                      <Badge
+                        color={liveState === 'connected' ? 'teal' : liveState === 'reconnecting' ? 'orange' : 'gray'}
+                        variant="dot"
+                      >
+                        {liveStateLabels[liveState]}
+                      </Badge>
+                      <Badge
+                        color={session.state === 'ACTIVE' ? 'teal' : session.state === 'FAILED' ? 'red' : 'gray'}
+                        variant="light"
+                        size="lg"
+                      >
+                        {session.state}
+                      </Badge>
+                    </Group>
                   </Group>
+                  {liveState === 'reconnecting' && (
+                    <Alert color="orange" mb="lg" title="Живые события временно недоступны">
+                      Последнее состояние сохранено. Интерфейс продолжает обновляться через Core каждые 3 секунды.
+                    </Alert>
+                  )}
                   {sessionScenario && (
                     <section className="session-scenario" aria-label="Информация о сценарии">
                       <Title order={2}>{sessionScenario.title}</Title>
@@ -287,6 +409,67 @@ export function TeacherPage({ api = teacherApi }: { api?: TeacherApi }) {
                   <Divider my="xl" />
                   <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Идентификатор сессии</Text>
                   <Text className="session-id" mt={5}>{session.id}</Text>
+                  <section className="teacher-services" aria-labelledby="teacher-services-title">
+                    <Group justify="space-between" align="baseline" mb="sm">
+                      <Title order={3} id="teacher-services-title">Службы ДДС</Title>
+                      {serviceAssignments && serviceAssignments.length > 0 && (
+                        <Text size="xs" c="dimmed">Назначено: {serviceAssignments.length}</Text>
+                      )}
+                    </Group>
+                    {assignmentsError && serviceAssignments === null ? (
+                      <Alert color="orange" title="Назначения пока недоступны">{assignmentsError}</Alert>
+                    ) : serviceAssignments === null ? (
+                      <Text size="sm" c="dimmed">Загружаем назначения…</Text>
+                    ) : serviceAssignments.length === 0 ? (
+                      <div className="teacher-services__empty">
+                        <Text fw={600}>Службы ещё не назначены</Text>
+                        <Text size="sm" c="dimmed" mt={3}>
+                          Назначения появятся после отправки карточки. Это нормальное состояние занятия.
+                        </Text>
+                      </div>
+                    ) : (
+                      <Stack gap="sm">
+                        {serviceAssignments.map((assignment) => (
+                          <article className="teacher-service" key={assignment.id}>
+                            <Group justify="space-between" align="flex-start" wrap="nowrap">
+                              <div>
+                                <Text fw={650}>{assignment.displayName}</Text>
+                                <Text size="xs" c="dimmed" mt={3}>
+                                  Изменено: {formatTimestamp(assignment.updatedAt)}
+                                </Text>
+                              </div>
+                              <Group gap={6} justify="flex-end">
+                                {assignment.overdue && <Badge color="red" variant="light">Просрочено</Badge>}
+                                <Badge color={serviceStatusColors[assignment.status]} variant="light">
+                                  {serviceStatusLabels[assignment.status]}
+                                </Badge>
+                              </Group>
+                            </Group>
+                            <details className="teacher-service__history">
+                              <summary>История статусов ({assignment.history.length})</summary>
+                              <ol>
+                                {assignment.history.map((entry) => (
+                                  <li key={entry.eventId}>
+                                    <Text size="sm" component="span" fw={600}>
+                                      {serviceStatusLabels[entry.status]}
+                                    </Text>{' '}
+                                    <Text size="xs" component="span" c="dimmed">
+                                      {formatTimestamp(entry.timestamp)}
+                                    </Text>
+                                    {(entry.comment || entry.refusalReason) && (
+                                      <Text size="xs" c="dimmed">
+                                        {entry.refusalReason ?? entry.comment}
+                                      </Text>
+                                    )}
+                                  </li>
+                                ))}
+                              </ol>
+                            </details>
+                          </article>
+                        ))}
+                      </Stack>
+                    )}
+                  </section>
                   {session.report && (
                     <Alert color={session.report.passed ? 'teal' : 'orange'} mt="xl" title="Результат занятия">
                       Оценка: {session.report.score} из {session.report.maxScore}.{' '}

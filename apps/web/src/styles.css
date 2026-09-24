@@ -104,16 +104,11 @@ body { margin: 0; min-width: 320px; }
 }
 .teacher-panel-slot { min-width: 0; }
 .teacher-panel-slot--session {
-  position: relative;
   align-self: stretch;
   min-height: 345px;
 }
 .teacher-panel-slot--session .session-panel {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  transform: translateY(clamp(120px, 18vh, 180px));
+  position: static;
 }
 .scenario-card {
   display: block;
@@ -160,6 +155,38 @@ body { margin: 0; min-width: 320px; }
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 13px;
 }
+.teacher-services {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5eaf1;
+}
+.teacher-services h3 { color: #20334e; font-size: 18px; }
+.teacher-services__empty {
+  padding: 16px;
+  border: 1px dashed #cdd8e5;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.teacher-service {
+  padding: 14px;
+  border: 1px solid #dfe7f0;
+  border-radius: 11px;
+  background: #fbfcfe;
+}
+.teacher-service__history { margin-top: 11px; color: #52657c; }
+.teacher-service__history summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+.teacher-service__history ol {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+.teacher-service__history li { padding-left: 2px; }
 
 .student-page { min-width: 0; padding-bottom: 72px; color: #28313a; }
 .student-page h1 { color: #20262d; font-size: 22px; line-height: 1.18; letter-spacing: -.025em; }
@@ -557,7 +584,6 @@ body { margin: 0; min-width: 320px; }
   .difficulty-filter { width: 100%; overflow-x: auto; }
   .teacher-layout { grid-template-columns: 1fr; }
   .teacher-panel-slot--session { min-height: 0; }
-  .teacher-panel-slot--session .session-panel { position: static; transform: none; }
   .session-meta { grid-template-columns: 1fr; }
   .assignment-brief { grid-template-columns: 1fr; gap: 10px; }
   .assignment-timer { justify-content: center; }

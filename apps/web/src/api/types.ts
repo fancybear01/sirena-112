@@ -260,6 +260,15 @@ export type SessionState =
   | 'SCORED'
   | 'FAILED';
 
+export type SessionEvent = {
+  eventId: string;
+  sessionId: string;
+  type: string;
+  timestamp: string;
+  source: 'core' | 'media' | 'ai' | 'any';
+  payload: Record<string, unknown>;
+};
+
 export type Session = {
   id: string;
   scenarioId: string;

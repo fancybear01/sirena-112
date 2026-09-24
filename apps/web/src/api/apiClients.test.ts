@@ -115,8 +115,22 @@ describe('Core API adapters', () => {
     await expect(api.getCurrentSession()).resolves.toMatchObject({
       state: 'SCORED', report: { score: 100 },
     });
-    expect(request).toHaveBeenCalledWith(`/api/student/sessions/${activeSession.id}`);
+    expect(request).toHaveBeenCalledWith(`/api/teacher/sessions/${activeSession.id}`);
     expect(storage.setItem).toHaveBeenCalled();
+  });
+
+  it('loads teacher service assignments through the contract endpoint', async () => {
+    const request = vi.fn().mockResolvedValue([serviceAssignment]);
+    const api = createTeacherHttpApi(
+      { baseUrl: 'https://core.example.test' },
+      { request } as HttpClient,
+      null,
+    );
+
+    await expect(api.getServiceAssignments(activeSession.id)).resolves.toEqual([serviceAssignment]);
+    expect(request).toHaveBeenCalledWith(
+      `/api/teacher/sessions/${activeSession.id}/service-assignments`,
+    );
   });
 
   it('clears a stale teacher session only when Core confirms 404', async () => {
