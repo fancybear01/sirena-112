@@ -119,6 +119,41 @@ export type RoutedService = ServiceRef & {
   reasons: RoutingReason[];
 };
 
+export type ServiceStatus =
+  | 'ADDED'
+  | 'RECEIVED'
+  | 'ACCEPTED'
+  | 'RESPONDING'
+  | 'ARRIVED'
+  | 'COMPLETED'
+  | 'REFUSED'
+  | 'FAILED';
+
+export type ServiceStatusEntry = {
+  eventId: string;
+  sequence: number;
+  fromStatus: ServiceStatus | null;
+  status: ServiceStatus;
+  timestamp: string;
+  source: 'SYSTEM' | 'MOCK' | 'TEACHER' | 'SERVICE';
+  comment?: string | null;
+  refusalReason?: string | null;
+};
+
+export type ServiceAssignment = {
+  id: string;
+  sessionId: string;
+  serviceId: string;
+  displayName: string;
+  cardRevision: number;
+  status: ServiceStatus;
+  createdAt: string;
+  updatedAt: string;
+  deadlineAt: string;
+  history: ServiceStatusEntry[];
+  overdue: boolean;
+};
+
 export type CardCalculation = {
   status: 'INCOMPLETE' | 'RESOLVED' | 'NO_MATCH';
   classifierVersion: string;

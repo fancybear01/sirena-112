@@ -3,6 +3,7 @@ import type {
   OperatorCardInput,
   OperatorCard,
   Scenario,
+  ServiceAssignment,
   ScoreCriterion as CoreScoreCriterion,
   ScoreError as CoreScoreError,
   Session,
@@ -16,6 +17,7 @@ export type StudentCardForm = CardFormDefinition;
 export type ScoreCriterion = CoreScoreCriterion;
 export type ScoreError = CoreScoreError;
 export type StudentSessionReport = SessionReport;
+export type StudentServiceAssignment = ServiceAssignment;
 
 export type StudentSession = Omit<Session, 'state' | 'startedAt' | 'endedAt'> & {
   state: 'ACTIVE' | 'SCORING' | 'SCORED';
@@ -31,6 +33,7 @@ export type StudentAssignment = {
 export interface StudentApi {
   getAssignment(): Promise<StudentAssignment>;
   getCardForm(sessionId: string): Promise<StudentCardForm>;
+  getServiceAssignments(sessionId: string): Promise<StudentServiceAssignment[]>;
   saveCard(sessionId: string, input: StudentCardInput, expectedRevision?: number): Promise<StudentSession>;
   submitCard(sessionId: string, input: StudentCardInput, expectedRevision?: number): Promise<StudentSessionReport>;
 }

@@ -53,6 +53,29 @@ const cardForm = {
   questions: [],
 };
 
+const serviceAssignment = {
+  id: '10000000-0000-4000-8000-000000000001',
+  sessionId: activeSession.id,
+  serviceId: 'MCHS',
+  displayName: 'Служба 101 (МЧС)',
+  cardRevision: 1,
+  status: 'ADDED',
+  createdAt: '2026-09-23T10:00:00.000Z',
+  updatedAt: '2026-09-23T10:00:00.000Z',
+  deadlineAt: '2026-09-23T11:00:00.000Z',
+  overdue: false,
+  history: [{
+    eventId: '20000000-0000-4000-8000-000000000001',
+    sequence: 1,
+    fromStatus: null,
+    status: 'ADDED',
+    timestamp: '2026-09-23T10:00:00.000Z',
+    source: 'SYSTEM',
+    comment: null,
+    refusalReason: null,
+  }],
+};
+
 describe('Core API adapters', () => {
   it('creates and starts a teacher session through contract endpoints', async () => {
     const request = vi.fn()
@@ -112,7 +135,7 @@ describe('Core API adapters', () => {
     expect(storage.removeItem).toHaveBeenCalled();
   });
 
-  it('adapts a student assignment, card form and input-only submit payload', async () => {
+  it('adapts a student assignment, card form, DDS statuses and input-only submit payload', async () => {
     const report = {
       sessionId: activeSession.id,
       score: 100,
@@ -125,6 +148,7 @@ describe('Core API adapters', () => {
     const request = vi.fn()
       .mockResolvedValueOnce([{ scenario, session: activeSession }])
       .mockResolvedValueOnce(cardForm)
+      .mockResolvedValueOnce([serviceAssignment])
       .mockResolvedValueOnce({ ...activeSession, cardRevision: 1 })
       .mockResolvedValueOnce(report);
     const api = createStudentHttpApi(
@@ -134,16 +158,21 @@ describe('Core API adapters', () => {
 
     const assignment = await api.getAssignment();
     await expect(api.getCardForm(assignment.session.id)).resolves.toMatchObject({ classifierVersion: '046-2024-11-15' });
+    await expect(api.getServiceAssignments(assignment.session.id)).resolves.toEqual([serviceAssignment]);
     await expect(api.saveCard(assignment.session.id, assignment.session.card.input, 0)).resolves.toMatchObject({ cardRevision: 1 });
     await expect(api.submitCard(assignment.session.id, assignment.session.card.input, 1)).resolves.toEqual(report);
     expect(request).toHaveBeenNthCalledWith(1, '/api/student/assignments');
     expect(request).toHaveBeenNthCalledWith(
       3,
+      `/api/student/sessions/${activeSession.id}/service-assignments`,
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      4,
       `/api/student/sessions/${activeSession.id}/card`,
       { method: 'PATCH', body: { input: assignment.session.card.input, expectedRevision: 0 } },
     );
     expect(request).toHaveBeenNthCalledWith(
-      4,
+      5,
       `/api/student/sessions/${activeSession.id}/submit`,
       { method: 'POST', body: { input: assignment.session.card.input, expectedRevision: 1 } },
     );
@@ -155,7 +184,8 @@ describe('Core API adapters', () => {
     const mockForm = await mockApi.getCardForm(mockAssignment.session.id);
     const request = vi.fn()
       .mockResolvedValueOnce([structuredClone(mockAssignment)])
-      .mockResolvedValueOnce(structuredClone(mockForm));
+      .mockResolvedValueOnce(structuredClone(mockForm))
+      .mockResolvedValueOnce([]);
     const httpApi = createStudentHttpApi(
       { baseUrl: 'https://core.example.test' },
       { request } as HttpClient,
@@ -164,5 +194,6 @@ describe('Core API adapters', () => {
 
     await expect(httpApi.getAssignment()).resolves.toEqual(mockAssignment);
     await expect(httpApi.getCardForm(mockAssignment.session.id)).resolves.toEqual(mockForm);
+    await expect(httpApi.getServiceAssignments(mockAssignment.session.id)).resolves.toEqual([]);
   });
 });
