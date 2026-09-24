@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { TeacherPage } from './TeacherPage';
 import { createTeacherMockApi } from './api/teacherMockApi';
+import { pollingTeacherSessionEvents } from './api/teacherSessionEvents';
+import type { ServiceAssignment, ServiceStatus, SessionReport } from '../../api/types';
+import type { TeacherApi, TeacherSessionEvents } from './api/types';
 
 beforeAll(() => {
   globalThis.ResizeObserver = class implements ResizeObserver {
@@ -30,12 +33,46 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-function renderTeacher(api = createTeacherMockApi({ delayMs: 0 })) {
+function renderTeacher(
+  api = createTeacherMockApi({ delayMs: 0 }),
+  sessionEvents: TeacherSessionEvents = pollingTeacherSessionEvents,
+  pollIntervalMs = 3000,
+) {
   return render(
     <MantineProvider>
-      <TeacherPage api={api} />
+      <TeacherPage api={api} sessionEvents={sessionEvents} pollIntervalMs={pollIntervalMs} />
     </MantineProvider>,
   );
+}
+
+function makeServiceAssignment(
+  id: string,
+  displayName: string,
+  status: ServiceStatus,
+): ServiceAssignment {
+  const timestamp = '2026-09-25T12:00:00.000Z';
+  return {
+    id,
+    sessionId: 'placeholder-session',
+    serviceId: id,
+    displayName,
+    cardRevision: 1,
+    status,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    deadlineAt: '2026-09-25T13:00:00.000Z',
+    overdue: false,
+    history: [{
+      eventId: `event-${id}-${status}`,
+      sequence: 1,
+      fromStatus: status === 'ADDED' ? null : 'ADDED',
+      status,
+      timestamp,
+      source: 'SYSTEM',
+      comment: null,
+      refusalReason: null,
+    }],
+  };
 }
 
 describe('teacher scenario flow', () => {
@@ -65,6 +102,111 @@ describe('teacher scenario flow', () => {
     await user.click(screen.getByRole('button', { name: 'Открыть сценарий «Задымление в мусоропроводе»' }));
     expect(within(scenarioInfo).getByRole('heading', { name: 'ДТП с пострадавшими' })).toBeInTheDocument();
     expect(within(scenarioInfo).queryByRole('heading', { name: 'Задымление в мусоропроводе' })).not.toBeInTheDocument();
+  });
+
+  it('shows several DDS services with independent statuses and available history', async () => {
+    const user = userEvent.setup();
+    const services = [
+      makeServiceAssignment('MCHS', 'Служба 101 (МЧС)', 'RECEIVED'),
+      makeServiceAssignment('MEDICAL', 'Скорая помощь', 'COMPLETED'),
+    ];
+    renderTeacher(createTeacherMockApi({ delayMs: 0, serviceAssignments: services }));
+
+    await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
+    await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
+
+    expect(await screen.findByRole('heading', { name: 'Службы ДДС' })).toBeInTheDocument();
+    const fireService = screen.getByText('Служба 101 (МЧС)').closest('article');
+    const medicalService = screen.getByText('Скорая помощь').closest('article');
+    expect(fireService).not.toBeNull();
+    expect(medicalService).not.toBeNull();
+    expect(within(fireService!).getAllByText('Получена').length).toBeGreaterThan(0);
+    expect(within(medicalService!).getAllByText('Завершена').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('История статусов (1)')).toHaveLength(2);
+  });
+
+  it('refreshes one DDS service from a live event without changing the others', async () => {
+    const user = userEvent.setup();
+    const base = createTeacherMockApi({ delayMs: 0 });
+    let services = [
+      makeServiceAssignment('MCHS', 'Служба 101 (МЧС)', 'ADDED'),
+      makeServiceAssignment('MEDICAL', 'Скорая помощь', 'ACCEPTED'),
+    ];
+    const api: TeacherApi = {
+      ...base,
+      getServiceAssignments: vi.fn(async (sessionId: string) => (
+        structuredClone(services.map((item) => ({ ...item, sessionId })))
+      )),
+    };
+    let emitEvent: Parameters<TeacherSessionEvents['subscribe']>[1] | null = null;
+    const sessionEvents: TeacherSessionEvents = {
+      subscribe(_sessionId, onEvent, onConnectionState) {
+        emitEvent = onEvent;
+        onConnectionState('connected');
+        return () => {};
+      },
+    };
+    renderTeacher(api, sessionEvents);
+
+    await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
+    await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
+    expect(await screen.findByText('Служба 101 (МЧС)')).toBeInTheDocument();
+
+    services = [
+      makeServiceAssignment('MCHS', 'Служба 101 (МЧС)', 'RESPONDING'),
+      makeServiceAssignment('MEDICAL', 'Скорая помощь', 'ACCEPTED'),
+    ];
+    await act(async () => {
+      emitEvent?.({
+        eventId: 'live-event-1',
+        sessionId: document.querySelector('.session-id')!.textContent!,
+        type: 'service.status_changed',
+        timestamp: '2026-09-25T12:01:00.000Z',
+        source: 'core',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      const fireService = screen.getByText('Служба 101 (МЧС)').closest('article');
+      expect(within(fireService!).getAllByText('Следует к месту').length).toBeGreaterThan(0);
+    });
+    const medicalService = screen.getByText('Скорая помощь').closest('article');
+    expect(within(medicalService!).getAllByText('Принята').length).toBeGreaterThan(0);
+  });
+
+  it('uses polling as a fallback and shows the saved score', async () => {
+    const user = userEvent.setup();
+    const base = createTeacherMockApi({ delayMs: 0 });
+    const report: SessionReport = {
+      sessionId: 'filled-after-launch',
+      score: 84,
+      maxScore: 100,
+      passed: true,
+      criteria: [],
+      errors: [],
+      recommendations: [],
+    };
+    let activeReads = 0;
+    const api: TeacherApi = {
+      ...base,
+      async getCurrentSession() {
+        const current = await base.getCurrentSession();
+        if (!current || activeReads++ === 0) return current;
+        return {
+          ...current,
+          state: 'SCORED',
+          report: { ...report, sessionId: current.id },
+        };
+      },
+    };
+    renderTeacher(api, pollingTeacherSessionEvents, 10);
+
+    await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
+    await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
+
+    expect(await screen.findByText(/Оценка: 84 из 100/)).toBeInTheDocument();
+    expect(screen.getByText('SCORED')).toBeInTheDocument();
   });
 
   it('filters scenarios by difficulty', async () => {

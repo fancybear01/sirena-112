@@ -5,14 +5,31 @@ import {
   studentDraftStorageKey,
   teacherSessionStorageKey,
 } from '../../../api/mockStorage';
-import type { TeacherApi, TeacherScenario, TeacherSession } from './types';
+import type { OperatorCard, SessionReport } from '../../../api/types';
+import type {
+  TeacherApi,
+  TeacherScenario,
+  TeacherServiceAssignment,
+  TeacherSession,
+} from './types';
 
 type MockOptions = {
   scenarios?: TeacherScenario[];
   delayMs?: number;
   failScenarios?: boolean;
+  serviceAssignments?: TeacherServiceAssignment[];
   storage?: Storage | null;
 };
+
+type StoredStudentSnapshot = {
+  sessionId: string;
+  endedAt: string | null;
+  cardRevision: number;
+  card: OperatorCard;
+  report: SessionReport | null;
+};
+
+const storedSessionStates = new Set(['ACTIVE', 'COMPLETED', 'SCORING', 'SCORED', 'FAILED']);
 
 function createEmptyCard(): TeacherSession['card'] {
   return {
@@ -38,13 +55,14 @@ function isStoredSession(value: unknown): value is TeacherSession {
   return typeof session.id === 'string'
     && typeof session.scenarioId === 'string'
     && session.mode === 'CARD'
-    && (session.state === 'ACTIVE' || session.state === 'COMPLETED')
+    && typeof session.state === 'string'
+    && storedSessionStates.has(session.state)
     && typeof session.startedAt === 'string'
     && (session.endedAt === null || typeof session.endedAt === 'string')
     && typeof session.cardRevision === 'number'
     && typeof session.timeLimitSeconds === 'number'
     && typeof session.timeLimitExceeded === 'boolean'
-    && session.report === null
+    && (session.report === null || typeof session.report === 'object')
     && Boolean(session.card && typeof session.card === 'object' && 'input' in session.card);
 }
 
@@ -71,6 +89,26 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
   }
 
   let currentSession = readSession();
+
+  function readStudentSnapshot(sessionId: string): StoredStudentSnapshot | null {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem(studentDraftStorageKey);
+      if (!raw) return null;
+      const value = JSON.parse(raw) as Partial<StoredStudentSnapshot>;
+      if (value.sessionId !== sessionId
+        || (value.endedAt !== null && typeof value.endedAt !== 'string')
+        || typeof value.cardRevision !== 'number'
+        || !value.card || typeof value.card !== 'object'
+        || !('input' in value.card)
+        || (value.report !== null && typeof value.report !== 'object')) {
+        return null;
+      }
+      return value as StoredStudentSnapshot;
+    } catch {
+      return null;
+    }
+  }
 
   function persistSession(session: TeacherSession | null) {
     currentSession = session;
@@ -103,7 +141,57 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
     },
 
     async getCurrentSession() {
+      if (currentSession) {
+        const student = readStudentSnapshot(currentSession.id);
+        if (student?.report) {
+          persistSession({
+            ...currentSession,
+            state: 'SCORED',
+            card: structuredClone(student.card),
+            cardRevision: student.cardRevision,
+            report: structuredClone(student.report),
+            endedAt: student.endedAt,
+          });
+        }
+      }
       return respond(currentSession);
+    },
+
+    async getServiceAssignments(sessionId) {
+      if (!currentSession || currentSession.id !== sessionId) {
+        throw new ApiError('Учебная сессия не найдена.', { status: 404 });
+      }
+      if (options.serviceAssignments) {
+        return respond(options.serviceAssignments.map((item) => ({ ...item, sessionId })));
+      }
+      const student = readStudentSnapshot(sessionId);
+      const services = student?.report ? student.card.calculation?.services ?? [] : [];
+      const createdAt = student?.endedAt ?? new Date().toISOString();
+      return respond(services.map((service, index): TeacherServiceAssignment => {
+        const suffix = (index + 1).toString(16).padStart(12, '0');
+        return {
+          id: `10000000-0000-4000-8000-${suffix}`,
+          sessionId,
+          serviceId: service.id,
+          displayName: service.displayName,
+          cardRevision: student?.cardRevision ?? 0,
+          status: 'ADDED',
+          createdAt,
+          updatedAt: createdAt,
+          deadlineAt: new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString(),
+          overdue: false,
+          history: [{
+            eventId: `20000000-0000-4000-8000-${suffix}`,
+            sequence: 1,
+            fromStatus: null,
+            status: 'ADDED',
+            timestamp: createdAt,
+            source: 'SYSTEM',
+            comment: null,
+            refusalReason: null,
+          }],
+        };
+      }));
     },
 
     async launchSession(scenarioId) {

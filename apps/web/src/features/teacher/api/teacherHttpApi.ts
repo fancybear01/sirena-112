@@ -1,4 +1,4 @@
-import { normalizeScenario, normalizeSession } from '../../../api/adapters';
+import { normalizeScenario, normalizeServiceAssignments, normalizeSession } from '../../../api/adapters';
 import type { ApiConfig } from '../../../api/config';
 import { createHttpClient, type HttpClient } from '../../../api/httpClient';
 import { ApiError } from '../../../api/errors';
@@ -52,7 +52,7 @@ export function createTeacherHttpApi(
       if (!cached) return null;
       try {
         const current = toTeacherSession(await http.request(
-          `/api/student/sessions/${encodeURIComponent(cached.id)}`,
+          `/api/teacher/sessions/${encodeURIComponent(cached.id)}`,
         ));
         cacheSession(current);
         return current;
@@ -63,6 +63,12 @@ export function createTeacherHttpApi(
         }
         throw error;
       }
+    },
+
+    async getServiceAssignments(sessionId) {
+      return normalizeServiceAssignments(await http.request(
+        `/api/teacher/sessions/${encodeURIComponent(sessionId)}/service-assignments`,
+      ));
     },
 
     async launchSession(scenarioId) {
