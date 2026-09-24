@@ -31,6 +31,7 @@ services:
       CORE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-sirena112-local}
       CORE_MEDIA_BASE_URL: http://media:8091
       CORE_MEDIA_MODE: ${CORE_MEDIA_MODE:-http}
+      CORE_AI_BASE_URL: ${CORE_AI_BASE_URL:-http://host.docker.internal:8090}
     ports:
       - "127.0.0.1:${CORE_PORT:-8080}:8080"
     depends_on:
@@ -75,6 +76,8 @@ services:
       context: ./services/media
     environment:
       MEDIA_HTTP_ADDR: ":8091"
+      MEDIA_MODE: ${MEDIA_MODE:-echo}
+      AI_BASE_URL: ${MEDIA_AI_BASE_URL:-ws://host.docker.internal:8090}
       ARI_BASE_URL: http://asterisk:8088/ari
       ARI_USERNAME: ${ASTERISK_ARI_USER:-media}
       ARI_PASSWORD: ${ASTERISK_ARI_PASSWORD:-change-me-ari}
@@ -84,7 +87,7 @@ services:
       RTP_PORT_END: "18099"
       RTP_PUBLIC_HOST: media
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORE_BASE_URL: ${CORE_MEDIA_EVENTS_URL:-}
+      CORE_BASE_URL: ${MEDIA_CORE_BASE_URL:-}
     ports:
       - "127.0.0.1:${MEDIA_PORT:-8091}:8091"
     depends_on:

@@ -3,8 +3,9 @@
 Go-сервис телефонно-аудиоконтура Сирена-112.
 
 Скрывает Asterisk (ARI/RTP) от Kotlin Core. В текущем MVP при запуске звонка создаёт bridge и `externalMedia`; после ответа
-оператора подключает SIP-канал к bridge и делает **RTP echo** (μ-law). AI WebSocket
-ещё не подключён — контракт уже есть в `contracts/media-ai.md`.
+оператора подключает SIP-канал к bridge. `MEDIA_MODE=echo` возвращает μ-law звук,
+`MEDIA_MODE=ai` открывает один AI WebSocket и воспроизводит ответ через RTP.
+Подробности и команды проверки: [AI bridge](docs/ai-websocket.md).
 
 Контракт Core↔Media: [`contracts/media-core.md`](../../contracts/media-core.md).
 
@@ -56,7 +57,9 @@ go run ./cmd/media
 | `ARI_APP` | Stasis app name (`sirena-media`) |
 | `RTP_LISTEN_ADDR` / `RTP_PORT` / `RTP_PORT_END` | UDP host and inclusive port range for externalMedia |
 | `RTP_PUBLIC_HOST` | host Asterisk dials for RTP (`media` in compose) |
-| `CORE_BASE_URL` | reserved; events go to log stub in MVP |
+| `MEDIA_MODE` | `echo` (default) / `ai` |
+| `AI_BASE_URL` | WS base URL, e.g. `ws://127.0.0.1:8090` |
+| `CORE_BASE_URL` | HTTP base URL Core; empty = logging publisher |
 | `LOG_LEVEL` | `debug` / `info` / … |
 
 Секреты не логируются.
@@ -75,10 +78,12 @@ curl -sS -X POST http://127.0.0.1:8091/internal/v1/calls/hangup \
   -d '{"callId":"<id>","sessionId":"s1"}'
 ```
 
-`speech.play` / `speech.cancel` → `501` stubs.
+`speech.play` → `501`. `speech.cancel` с `callId` отправляет `response.cancel`
+и очищает очередь воспроизведения. `POST /internal/v1/calls/{callId}/input/flush`
+завершает входную реплику явно. В echo обе AI-команды возвращают `501`.
 
-События `call.ringing` / `call.answered` / `call.ended` пишутся в лог через
-`CoreEventPublisher` stub (поле `core event`).
+С непустым `CORE_BASE_URL` события lifecycle, `transcript.final` и `media.error`
+уходят в `/internal/v1/media/events`. Без него используется logging publisher.
 
 ## RTP
 

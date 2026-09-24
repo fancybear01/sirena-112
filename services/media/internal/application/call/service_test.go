@@ -221,3 +221,38 @@ func TestCleanupFailureIsReportedAndRetryable(t *testing.T) {
 		t.Fatalf("empty hangup: %v", err)
 	}
 }
+
+func TestAIErrorCorrelationsAndNextCall(t *testing.T) {
+	ast := &fakeAsterisk{}
+	core := &fakeCore{}
+	svc := call.NewService(ast, core, slog.Default())
+	for i := 0; i < 2; i++ {
+		c, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s", AISessionID: "ai", SIPAddress: "1001"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "ChannelStateChange", State: "Up"})
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "transcript.final", Payload: map[string]any{"text": "test", "simulated": true}})
+		if i == 0 {
+			svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "media.error", Payload: map[string]any{"message": "AI disconnected"}})
+		} else {
+			if _, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := len(core.events)
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "ChannelStateChange", State: "Up"})
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "media.error"})
+		if len(core.events) != before {
+			t.Fatal("late events resurrected terminal call")
+		}
+	}
+	for _, evt := range core.events {
+		if evt.EventID == "" || evt.SessionID != "s" || evt.Payload["callId"] == nil || evt.Payload["aiSessionId"] != "ai" {
+			t.Fatalf("lost correlation: %+v", evt)
+		}
+	}
+	if ast.hangups != 2 {
+		t.Fatal("cleanup not called for disconnect/hangup")
+	}
+}
