@@ -6,6 +6,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 interface ScenarioRepository {
     fun save(scenario: Scenario): Scenario
+    /** Inserts a validated package without replacing an existing scenario. */
+    fun insertAllNew(scenarios: List<Scenario>)
     fun findById(id: UUID): Scenario?
     fun findAll(): List<Scenario>
 }
@@ -16,6 +18,15 @@ class InMemoryScenarioRepository : ScenarioRepository {
     override fun save(scenario: Scenario): Scenario {
         scenarios[scenario.id] = scenario
         return scenario
+    }
+
+    @Synchronized
+    override fun insertAllNew(scenarios: List<Scenario>) {
+        require(scenarios.map { it.id }.distinct().size == scenarios.size) { "Повторяющиеся id в пакете" }
+        if (scenarios.any { this.scenarios.containsKey(it.id) }) {
+            throw IllegalStateException("Сценарий с таким id уже существует")
+        }
+        scenarios.forEach { this.scenarios[it.id] = it }
     }
 
     override fun findById(id: UUID): Scenario? = scenarios[id]
@@ -86,4 +97,5 @@ class InMemorySessionEventRepository : SessionEventRepository, SessionEventSubsc
             if (sessionListeners.isEmpty()) listeners.remove(sessionId, sessionListeners)
         }
     }
+
 }

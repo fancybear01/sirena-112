@@ -39,6 +39,40 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Scenario" }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /api/teacher/scenarios/import/validate:
+    post:
+      summary: Предварительно проверить пакет сценариев без изменений
+      description: Доступно только с локального адреса при CORE_SCENARIO_IMPORT_ENABLED=true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScenarioImportPackage" }
+      responses:
+        "200":
+          description: Результат проверки элементов и дубликатов
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioImportPreview" }
+        "403": { description: Локальный импорт не включён или запрос не с loopback }
+  /api/teacher/scenarios/import:
+    post:
+      summary: Атомарно добавить проверенный пакет сценариев
+      description: Не перезаписывает существующие id и не меняет официальный каталог.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScenarioImportPackage" }
+      responses:
+        "201":
+          description: Все сценарии пакета добавлены
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Локальный импорт не включён или запрос не с loopback }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/teacher/sessions:
     post:
       summary: Создать учебную сессию
@@ -87,6 +121,48 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SessionReport" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/report.xlsx:
+    get:
+      summary: Скачать обезличенный XLSX оценённого занятия
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: XLSX из сохранённого отчёта
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/teacher/sessions/{sessionId}/report.pdf:
+    get:
+      summary: Скачать обезличенный PDF оценённого занятия
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: PDF из сохранённого отчёта
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/teacher/analytics/summary.xlsx:
+    get:
+      summary: Скачать XLSX агрегированной аналитики
+      responses:
+        "200":
+          description: XLSX из текущей сводки Core
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+  /api/teacher/analytics/summary.pdf:
+    get:
+      summary: Скачать PDF агрегированной аналитики
+      responses:
+        "200":
+          description: PDF из текущей сводки Core
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
   /api/student/assignments:
     get:
       summary: Назначенные задания обучающегося
@@ -724,6 +800,16 @@ components:
         timeLimitSeconds: { type: integer, minimum: 1, default: 30 }
         groundTruth: { $ref: "#/components/schemas/GroundTruth" }
         rubric: { $ref: "#/components/schemas/Rubric" }
+        caller:
+          type: object
+          additionalProperties: false
+          properties:
+            persona: { type: string }
+            panic: { type: number, minimum: 0, maximum: 1 }
+            trust: { type: number, minimum: 0, maximum: 1 }
+            patience: { type: number, minimum: 0, maximum: 1 }
+            voice: { type: string }
+            background: { type: string }
     GroundTruth:
       description: |
         Основная форма — GroundTruthV2. LegacyGroundTruth поддерживается только
@@ -795,6 +881,50 @@ components:
               description: { type: string }
               weight: { type: number, minimum: 0 }
               critical: { type: boolean, default: false }
+    ScenarioImportPackage:
+      type: object
+      additionalProperties: false
+      required: [scenarios]
+      properties:
+        scenarios:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/Scenario" }
+              - type: object
+                required: [groundTruth]
+                properties:
+                  groundTruth: { $ref: "#/components/schemas/GroundTruthV2" }
+    ScenarioImportPreview:
+      type: object
+      additionalProperties: false
+      required: [valid, scenarioIds, errors]
+      properties:
+        valid: { type: boolean }
+        scenarioIds:
+          type: array
+          items: { type: string, format: uuid }
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [index, code, message]
+            properties:
+              index: { type: [integer, "null"] }
+              code: { type: string }
+              message: { type: string }
+    ScenarioImportResult:
+      type: object
+      additionalProperties: false
+      required: [imported, scenarioIds]
+      properties:
+        imported: { type: integer, minimum: 1 }
+        scenarioIds:
+          type: array
+          items: { type: string, format: uuid }
     SessionReport:
       type: object
       additionalProperties: false

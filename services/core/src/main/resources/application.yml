@@ -28,6 +28,8 @@ server:
 
 core:
   storage: ${CORE_STORAGE:in-memory}
+  scenario-import:
+    enabled: ${CORE_SCENARIO_IMPORT_ENABLED:false}
   environment: ${CORE_ENVIRONMENT:local}
   version: ${CORE_VERSION:dev}
   ai-base-url: ${CORE_AI_BASE_URL:http://localhost:8090}

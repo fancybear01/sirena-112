@@ -35,6 +35,12 @@ class PostgresScenarioRepository(private val jdbc: JdbcTemplate, private val map
         return scenario
     }
 
+    override fun insertAllNew(scenarios: List<Scenario>) {
+        scenarios.forEach { scenario ->
+            jdbc.update("INSERT INTO scenarios(id, body) VALUES (?, CAST(? AS jsonb))", scenario.id, mapper.json(scenario))
+        }
+    }
+
     override fun findById(id: UUID): Scenario? = jdbc.query(
         "SELECT body::text FROM scenarios WHERE id = ?", { rs, _ -> mapper.value(rs.getString(1), Scenario::class.java) }, id
     ).firstOrNull()

@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.server.ResponseStatusException
 import ru.sirena112.core.domain.InvalidSessionTransitionException
 import ru.sirena112.core.integration.UpstreamConflictException
 import ru.sirena112.core.integration.UpstreamProtocolException
@@ -16,6 +17,10 @@ import java.util.NoSuchElementException
 
 @RestControllerAdvice
 class ApiExceptionHandler {
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleResponseStatus(exception: ResponseStatusException, request: ServletWebRequest): ResponseEntity<ApiError> =
+        response(exception.status, "ACCESS_DENIED", exception.reason ?: "Доступ запрещён", request)
 
     @ExceptionHandler(UpstreamUnavailableException::class)
     fun handleUpstreamUnavailable(exception: UpstreamUnavailableException, request: ServletWebRequest): ResponseEntity<ApiError> =

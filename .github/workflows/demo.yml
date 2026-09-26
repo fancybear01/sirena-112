@@ -42,9 +42,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Build Core with PostgreSQL
-        run: docker compose up --build --detach --wait postgres core
+        run: CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
       - name: Run card smoke scenario against PostgreSQL
         run: python scripts/smoke_card_1050602.py --core http://127.0.0.1:8080 --expect-fallback
+      - name: Import a validated scenario through local Core API
+        run: python scripts/smoke_import_postgres.py
       - name: Restart Core and check persisted records
         shell: bash
         run: |
@@ -57,6 +59,8 @@ jobs:
           test "$(docker compose exec -T postgres psql -U sirena112 -d sirena112 -tAc 'SELECT count(*) FROM training_sessions')" -ge 2
           test "$(docker compose exec -T postgres psql -U sirena112 -d sirena112 -tAc 'SELECT count(*) FROM session_reports')" -ge 2
           test "$(docker compose exec -T postgres psql -U sirena112 -d sirena112 -tAc 'SELECT count(*) FROM service_assignments')" -gt 0
+      - name: Verify imported scenario after Core restart
+        run: python scripts/smoke_import_postgres.py --verify-only
       - name: Show Core and PostgreSQL logs on failure
         if: failure()
         run: docker compose logs --no-color --tail=150 core postgres
