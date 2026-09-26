@@ -94,7 +94,7 @@ jobs:
           python -m uvicorn app.main:app --app-dir services/ai --host 127.0.0.1 --port 8090 > "$RUNNER_TEMP/sirena-ai.log" 2>&1 &
           ai_pid=$!
           chmod +x services/core/gradlew
-          (cd services/core && ./gradlew bootRun --no-daemon) > "$RUNNER_TEMP/sirena-core.log" 2>&1 &
+          (cd services/core && CORE_MEDIA_BASE_URL=http://127.0.0.1:18091 ./gradlew bootRun --no-daemon) > "$RUNNER_TEMP/sirena-core.log" 2>&1 &
           core_pid=$!
           trap 'result=$?; kill "$ai_pid" "$core_pid" 2>/dev/null || true; if [ "$result" -ne 0 ]; then tail -100 "$RUNNER_TEMP/sirena-ai.log"; tail -100 "$RUNNER_TEMP/sirena-core.log"; fi' EXIT
           ready=false
@@ -107,6 +107,7 @@ jobs:
           done
           test "$ready" = true
           python scripts/smoke_card_1050602.py --expect-ai
+          python scripts/smoke_voice_contract.py --core http://127.0.0.1:8080 --ai http://127.0.0.1:8090 --media-port 18091
           kill "$ai_pid"
           wait "$ai_pid" || true
           python scripts/smoke_card_1050602.py --expect-fallback
