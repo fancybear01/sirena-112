@@ -1,7 +1,8 @@
 # Контракт Core ↔ Media
 
-Команды реализованы Go Media в задачах #10–#12; приём событий Core добавлен
-в #54. RTP ↔ AI bridge зависит от #53 (до его интеграции остаётся echo).
+Команды реализованы Go Media; приём событий Core добавлен в #54, а
+RTP ↔ AI bridge и HTTP publisher Media — в #53. Режим `echo` остаётся
+диагностическим вариантом запуска.
 
 ## Роли
 
@@ -17,7 +18,7 @@ Media **не** ходит в PostgreSQL и не считает score.
 ## Transport
 
 - Core → Media: HTTP JSON, base URL `CORE_MEDIA_BASE_URL` (по умолчанию `http://127.0.0.1:8091`)
-- Media → Core: `POST /internal/v1/media/events`, JSON-конверт из `events.md`; Core отвечает `{eventId,accepted,sessionState}`. Публикация по сети со стороны Media — отдельная интеграция.
+- Media → Core: `POST /internal/v1/media/events`, JSON-конверт из `events.md`; Core отвечает `{eventId,accepted,sessionState}`. В Media публикацию включает непустой `CORE_BASE_URL` (`MEDIA_CORE_BASE_URL` в Compose).
 - Correlation: заголовок `X-Request-Id` (опционально) + `sessionId` / `callId` в теле и событиях.
 
 ## Команды Core → Media
@@ -168,12 +169,13 @@ Media **не** ходит в PostgreSQL и не считает score.
 7. Проверить в логах cleanup / RTP stats без payload аудио
 
 Скрипт: `services/media/scripts/smoke.sh`.
+Проверка корреляции Core–AI–Media, повторов событий и ошибок запуска:
+[`docs/voice-contract-68.md`](../docs/voice-contract-68.md).
 
 ## Явные ограничения MVP
 
 - AI WebSocket работает в явном режиме `ai`; pause detector пока заменён явным flush;
 - число одновременных звонков ограничено диапазоном `RTP_PORT`–`RTP_PORT_END`;
-- Пока Media публикует события только в log stub: для сквозного звонка нужно
-  подключить его publisher к `POST /internal/v1/media/events` (#53 / смежная интеграция);
+- при пустом `CORE_BASE_URL` Media пишет события только в лог;
 - нет SRTP/Opus;
 - ARI HTTP на хосте только `127.0.0.1`.

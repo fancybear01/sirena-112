@@ -2,6 +2,7 @@ package ru.sirena112.core.integration
 
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpStatusCodeException
 import ru.sirena112.core.domain.EventSource
 import ru.sirena112.core.domain.SessionEvent
 import ru.sirena112.core.domain.SessionEventRepository
@@ -119,6 +120,13 @@ class VoiceTrainingService(
             calls.bind(mediaClient.startCall(MediaCallCommand(sessionId, ai.aiSessionId, destination)))
         } catch (exception: Exception) {
             calls.cancelUnbound(sessionId)
+            // A definitive 409/503 means Media did not accept this new call. Release
+            // the AI reservation so a retry cannot exhaust its session capacity.
+            // A network timeout is ambiguous: Media may have accepted the call.
+            if (exception is UpstreamConflictException ||
+                (exception is UpstreamUnavailableException && exception.cause is HttpStatusCodeException)) {
+                aiClient.closeSession(ai.aiSessionId)
+            }
             throw exception
         }
     }
