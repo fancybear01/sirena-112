@@ -6,7 +6,7 @@ RUN sed -i 's/\r$//' gradlew && chmod +x gradlew && ./gradlew bootJar --no-daemo
     find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -exec cp {} /app/core.jar \;
 
 FROM eclipse-temurin:17-jre-jammy
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app/services/core
 COPY --from=build /app/core.jar /app/services/core/app.jar

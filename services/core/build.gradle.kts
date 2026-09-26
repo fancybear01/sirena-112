@@ -21,6 +21,9 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("net.logstash.logback:logstash-logback-encoder:6.6")
     implementation("org.flywaydb:flyway-core")
+    implementation("com.networknt:json-schema-validator:1.5.9")
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.pdfbox:pdfbox:2.0.31")
     runtimeOnly("org.postgresql:postgresql")
     runtimeOnly("com.h2database:h2")
 
