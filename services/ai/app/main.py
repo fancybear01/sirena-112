@@ -4,6 +4,10 @@
 """
 
 from fastapi import FastAPI
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import hmac
+import os
 
 from app.config import SERVICE_VERSION
 from app.web.errors import register_error_handlers
@@ -20,6 +24,14 @@ def create_app() -> FastAPI:
     )
 
     register_request_id(app)
+    @app.middleware("http")
+    async def require_service_token(request: Request, call_next):
+        token = os.getenv("AI_SERVICE_TOKEN", "")
+        if token and request.url.path.startswith("/ai/") and not hmac.compare_digest(
+            request.headers.get("authorization", ""), f"Bearer {token}"
+        ):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(ai_router)

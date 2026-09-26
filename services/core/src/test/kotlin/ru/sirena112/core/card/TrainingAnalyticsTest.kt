@@ -27,10 +27,11 @@ class TrainingAnalyticsTest {
     @Autowired lateinit var scenarios: ScenarioRepository
     @Autowired lateinit var sessions: TrainingSessionRepository
     @Autowired lateinit var reports: SessionReportRepository
+    @Autowired lateinit var access: ru.sirena112.core.auth.SessionAccess
 
     @Test
     fun `empty set has zero counts and no invented average`() {
-        val empty = TrainingAnalyticsController(InMemoryTrainingSessionRepository(), InMemorySessionReportRepository()).summary()
+        val empty = TrainingAnalyticsController(InMemoryTrainingSessionRepository(), InMemorySessionReportRepository(), access).summary()
         assertThat(empty.completedSessions).isZero()
         assertThat(empty.averagePercent).isNull()
         assertThat(empty.medianPercent).isNull()

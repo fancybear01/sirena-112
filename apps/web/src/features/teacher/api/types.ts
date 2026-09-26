@@ -36,10 +36,11 @@ export type TeacherSession = Omit<Session, 'card' | 'startedAt' | 'endedAt'> & {
 };
 
 export interface TeacherApi {
+  getStudents?(): Promise<{ id: string; displayName: string; username: string }[]>;
   getScenarios(): Promise<TeacherScenario[]>;
   getCurrentSession(): Promise<TeacherSession | null>;
   getServiceAssignments(sessionId: string): Promise<TeacherServiceAssignment[]>;
-  launchSession(scenarioId: string): Promise<TeacherSession>;
+  launchSession(scenarioId: string, studentId?: string): Promise<TeacherSession>;
   stopSession(sessionId: string): Promise<TeacherSession>;
   clearSession(): Promise<void>;
 }

@@ -29,11 +29,15 @@ data class TrainingAnalyticsSummary(
 @RequestMapping("/api/teacher/analytics")
 class TrainingAnalyticsController(
     private val sessions: TrainingSessionRepository,
-    private val reports: SessionReportRepository
+    private val reports: SessionReportRepository,
+    private val access: ru.sirena112.core.auth.SessionAccess
 ) {
     @GetMapping("/summary")
     fun summary(): TrainingAnalyticsSummary {
+        val actor = access.current()
         val scored = sessions.findAll().asSequence()
+            .filter { actor == null || actor.role == ru.sirena112.core.auth.Role.ADMIN ||
+                (actor.role == ru.sirena112.core.auth.Role.TEACHER && actor.groupId != null && it.groupId == actor.groupId) }
             .filter { it.mode == SessionMode.CARD && it.state == SessionState.SCORED && it.endedAt != null }
             .associateBy { it.id }
         val results = reports.findAll().asSequence()

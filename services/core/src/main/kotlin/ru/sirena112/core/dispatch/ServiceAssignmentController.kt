@@ -5,10 +5,15 @@ import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @RestController
-class ServiceAssignmentController(private val assignments: ServiceAssignmentService) {
+class ServiceAssignmentController(private val assignments: ServiceAssignmentService,
+    private val access: ru.sirena112.core.auth.SessionAccess) {
     @GetMapping("/api/student/sessions/{sessionId}/service-assignments",
         "/api/teacher/sessions/{sessionId}/service-assignments")
-    fun list(@PathVariable sessionId: UUID): List<ServiceAssignment> = assignments.list(sessionId)
+    fun list(@PathVariable sessionId: UUID, request: javax.servlet.http.HttpServletRequest): List<ServiceAssignment> {
+        if (request.requestURI.startsWith("/api/student/")) access.studentOwns(sessionId)
+        else access.teacherCanRead(sessionId)
+        return assignments.list(sessionId)
+    }
 }
 
 /** Отключён по умолчанию. Не является интеграцией с реальными ведомствами. */

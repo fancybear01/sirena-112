@@ -6,6 +6,7 @@ import {
   Divider,
   Group,
   Paper,
+  Select,
   SegmentedControl,
   Stack,
   Text,
@@ -14,6 +15,7 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import { getApiErrorMessage } from '../../api/errors';
+import { secureAuth } from '../../api/auth';
 import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
@@ -122,6 +124,8 @@ export function TeacherPage({
   const [scenarios, setScenarios] = useState<TeacherScenario[] | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('ALL');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [students, setStudents] = useState<{ id: string; displayName: string; username: string }[]>([]);
+  const [studentId, setStudentId] = useState<string | null>(null);
   const [session, setSession] = useState<TeacherSession | null>(null);
   const [serviceAssignments, setServiceAssignments] = useState<TeacherServiceAssignment[] | null>(null);
   const [assignmentsError, setAssignmentsError] = useState('');
@@ -157,6 +161,15 @@ export function TeacherPage({
   useEffect(() => {
     void loadScenarios();
   }, [loadScenarios]);
+
+  useEffect(() => {
+    if (secureAuth && api.getStudents) {
+      void api.getStudents().then((items) => {
+        setStudents(items);
+        setStudentId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null);
+      }).catch(() => setOperationError('Не удалось загрузить список студентов группы.'));
+    }
+  }, [api]);
 
   useEffect(() => {
     const sessionId = session?.id;
@@ -245,7 +258,8 @@ export function TeacherPage({
     setOperationError('');
     setIsLaunching(true);
     try {
-      setSession(await api.launchSession(selectedScenario.id));
+      if (secureAuth && !studentId) throw new Error('Выберите студента');
+      setSession(await api.launchSession(selectedScenario.id, studentId ?? undefined));
     } catch (error) {
       setOperationError(getApiErrorMessage(error, 'Не удалось запустить занятие. Попробуйте ещё раз.'));
     } finally {
@@ -527,11 +541,14 @@ export function TeacherPage({
                       </Text>
                     </div>
                   </Group>
+                  {secureAuth && <Select mt="xl" label="Студент группы" placeholder="Выберите студента"
+                    data={students.map((item) => ({ value: item.id, label: `${item.displayName} (${item.username})` }))}
+                    value={studentId} onChange={setStudentId} />}
                   <Button
                     fullWidth
                     mt="xl"
                     leftSection={<IconPlayerPlay size={18} />}
-                    disabled={selectedScenario.status !== 'READY'}
+                    disabled={selectedScenario.status !== 'READY' || (secureAuth && !studentId)}
                     loading={isLaunching}
                     onClick={() => void launchSession()}
                   >

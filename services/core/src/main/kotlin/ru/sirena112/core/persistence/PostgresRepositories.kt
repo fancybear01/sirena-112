@@ -53,15 +53,17 @@ class PostgresScenarioRepository(private val jdbc: JdbcTemplate, private val map
 class PostgresTrainingSessionRepository(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) : TrainingSessionRepository {
     override fun save(session: TrainingSession): TrainingSession {
         jdbc.update("""
-            INSERT INTO training_sessions(id, scenario_id, scenario_body, mode, state, card_body, card_revision, created_at, started_at, ended_at, updated_at, failure_reason, time_limit_event_emitted)
-            VALUES (?, ?, CAST(? AS jsonb), ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO training_sessions(id, scenario_id, scenario_body, mode, state, card_body, card_revision, created_at, started_at, ended_at, updated_at, failure_reason, time_limit_event_emitted, student_id, teacher_id, group_id)
+            VALUES (?, ?, CAST(? AS jsonb), ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET scenario_body = EXCLUDED.scenario_body, mode = EXCLUDED.mode,
               state = EXCLUDED.state, card_body = EXCLUDED.card_body, card_revision = EXCLUDED.card_revision,
               started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at, updated_at = EXCLUDED.updated_at,
-              failure_reason = EXCLUDED.failure_reason, time_limit_event_emitted = EXCLUDED.time_limit_event_emitted
+              failure_reason = EXCLUDED.failure_reason, time_limit_event_emitted = EXCLUDED.time_limit_event_emitted,
+              student_id = EXCLUDED.student_id, teacher_id = EXCLUDED.teacher_id, group_id = EXCLUDED.group_id
         """.trimIndent(), session.id, session.scenario.id, mapper.json(session.scenario), session.mode.name, session.state.name,
             mapper.json(session.operatorCard), session.cardRevision, session.createdAt.sqlTimestamp(), session.startedAt.sqlTimestamp(), session.endedAt.sqlTimestamp(),
-            session.updatedAt.sqlTimestamp(), session.failureReason, session.timeLimitEventEmitted)
+            session.updatedAt.sqlTimestamp(), session.failureReason, session.timeLimitEventEmitted,
+            session.studentId, session.teacherId, session.groupId)
         return session
     }
 
@@ -84,7 +86,10 @@ class PostgresTrainingSessionRepository(private val jdbc: JdbcTemplate, private 
             endedAt = rs.getTimestamp("ended_at")?.toInstant(),
             updatedAt = rs.getTimestamp("updated_at").toInstant(),
             failureReason = rs.getString("failure_reason"),
-            timeLimitEventEmitted = rs.getBoolean("time_limit_event_emitted")
+            timeLimitEventEmitted = rs.getBoolean("time_limit_event_emitted"),
+            studentId = rs.getObject("student_id", UUID::class.java),
+            teacherId = rs.getObject("teacher_id", UUID::class.java),
+            groupId = rs.getObject("group_id", UUID::class.java)
         )
     }
 }

@@ -8,6 +8,8 @@
 import asyncio
 import contextlib
 import logging
+import hmac
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
@@ -169,6 +171,10 @@ async def voice_stream(
     ai_session_id: str,
     sessionId: str = Query(..., description="Идентификатор учебной сессии в Core"),
 ) -> None:
+    token = os.getenv("AI_SERVICE_TOKEN", "")
+    if token and not hmac.compare_digest(websocket.headers.get("authorization", ""), f"Bearer {token}"):
+        await websocket.close(code=4401)
+        return
     session = store().resolve(ai_session_id, sessionId)
     if session is None:
         await websocket.close(code=CLOSE_UNKNOWN_SESSION)

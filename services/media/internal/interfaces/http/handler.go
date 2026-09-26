@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/fancybear01/sirena-112/services/media/internal/application/call"
@@ -34,7 +36,15 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/v1/speech/play", h.speechStub)
 	mux.HandleFunc("POST /internal/v1/speech/cancel", h.cancelSpeech)
 	mux.HandleFunc("POST /internal/v1/calls/{callId}/input/flush", h.flushInput)
-	return withRequestID(mux)
+	return withRequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := os.Getenv("CORE_MEDIA_SERVICE_TOKEN")
+		if token != "" && strings.HasPrefix(r.URL.Path, "/internal/") &&
+			subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

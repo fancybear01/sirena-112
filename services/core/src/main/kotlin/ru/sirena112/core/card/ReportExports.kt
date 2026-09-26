@@ -32,7 +32,8 @@ class ReportExports(
     private val sessions: TrainingSessionRepository,
     private val reports: SessionReportRepository,
     private val analytics: TrainingAnalyticsController,
-    private val catalog: ClassifierCatalog
+    private val catalog: ClassifierCatalog,
+    private val access: ru.sirena112.core.auth.SessionAccess
 ) {
     @GetMapping("/sessions/{sessionId}/report.xlsx")
     fun reportXlsx(@PathVariable sessionId: UUID): ResponseEntity<ByteArray> =
@@ -49,6 +50,7 @@ class ReportExports(
     fun summaryPdf(): ResponseEntity<ByteArray> = download(summarySnapshot(), "training-summary.pdf", MediaType.APPLICATION_PDF, ::pdf)
 
     private fun reportSnapshot(sessionId: UUID): ExportSnapshot {
+        access.teacherCanRead(sessionId)
         val session = sessions.findById(sessionId) ?: throw NoSuchElementException("Учебная сессия не найдена")
         if (session.mode != SessionMode.CARD || session.state != SessionState.SCORED || session.endedAt == null) {
             throw IllegalStateException("Экспорт доступен только после оценки завершённой карточной сессии")

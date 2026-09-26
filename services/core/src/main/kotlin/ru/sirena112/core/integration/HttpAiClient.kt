@@ -39,6 +39,7 @@ class HttpAiClient(
             val headers = HttpHeaders().apply {
                 contentType = MediaType.APPLICATION_JSON
                 set("X-Request-ID", MDC.get("requestId") ?: UUID.randomUUID().toString())
+                System.getenv("AI_SERVICE_TOKEN")?.takeIf { it.isNotBlank() }?.let { setBearerAuth(it) }
             }
             val response = try {
                 restTemplate.exchange(
@@ -69,7 +70,8 @@ class HttpAiClient(
         sessions.entries.removeIf { it.value.aiSessionId == aiSessionId }
         val baseUrl = properties.aiBaseUrl.trimEnd('/')
         if (baseUrl.isBlank()) return
-        runCatching { restTemplate.delete("$baseUrl/ai/voice/sessions/$aiSessionId") }
+        runCatching { restTemplate.exchange("$baseUrl/ai/voice/sessions/$aiSessionId", HttpMethod.DELETE,
+            HttpEntity<Void>(serviceHeaders()), Void::class.java) }
             .onFailure { log.warn("Не удалось освободить голосовую AI-сессию {}: {}", aiSessionId, it.message) }
     }
 
@@ -80,11 +82,8 @@ class HttpAiClient(
         }
 
         return try {
-            restTemplate.postForObject(
-                "$baseUrl/ai/sessions/score",
-                command,
-                AiScoreReport::class.java
-            )
+            restTemplate.exchange("$baseUrl/ai/sessions/score", HttpMethod.POST,
+                HttpEntity(command, serviceHeaders()), AiScoreReport::class.java).body
         } catch (exception: Exception) {
             // Уровень warn, а не error: это ожидаемый режим работы без AI.
             log.warn(
@@ -94,5 +93,10 @@ class HttpAiClient(
             )
             null
         }
+    }
+
+    private fun serviceHeaders(): HttpHeaders = HttpHeaders().apply {
+        contentType = MediaType.APPLICATION_JSON
+        System.getenv("AI_SERVICE_TOKEN")?.takeIf { it.isNotBlank() }?.let { setBearerAuth(it) }
     }
 }

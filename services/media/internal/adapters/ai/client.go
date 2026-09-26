@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,7 +50,11 @@ func Dial(ctx context.Context, cfg Config, sessionID, aiID string, onAudio func(
 	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	endpoint := base + "/internal/v1/voice/" + url.PathEscape(aiID) + "?" + url.Values{"sessionId": {sessionID}}.Encode()
-	conn, resp, err := (&websocket.Dialer{HandshakeTimeout: cfg.Timeout}).DialContext(ctx, endpoint, nil)
+	headers := http.Header{}
+	if token := os.Getenv("AI_SERVICE_TOKEN"); token != "" {
+		headers.Set("Authorization", "Bearer "+token)
+	}
+	conn, resp, err := (&websocket.Dialer{HandshakeTimeout: cfg.Timeout}).DialContext(ctx, endpoint, headers)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}

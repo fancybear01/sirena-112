@@ -24,6 +24,13 @@ export function createHttpClient(baseUrl: string, fetchImpl: typeof fetch = fetc
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+      if (import.meta.env.VITE_AUTH_MODE === 'secure' &&
+          options.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method.toUpperCase())) {
+        const csrfResponse = await fetchImpl(`${baseUrl}/api/auth/csrf`, { credentials: 'include' });
+        if (!csrfResponse.ok) throw new ApiError('Не удалось получить защитный токен.', { status: csrfResponse.status });
+        const csrf = await csrfResponse.json() as { token: string; headerName: string };
+        headers.set(csrf.headerName, csrf.token);
+      }
 
       let response: Response;
       try {

@@ -7,6 +7,7 @@ services:
       dockerfile: services/ai/Dockerfile.card
     environment:
       AI_PORT: "8090"
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-}
     ports:
       - "127.0.0.1:8090:8090"
     healthcheck:
@@ -25,6 +26,11 @@ services:
       CORE_AI_BASE_URL: http://ai:8090
       CORE_MEDIA_MODE: mock
       CORE_STORAGE: in-memory
+      CORE_AUTH_ENABLED: ${CORE_AUTH_ENABLED:-false}
+      CORE_BOOTSTRAP_ADMIN_USERNAME: ${CORE_BOOTSTRAP_ADMIN_USERNAME:-}
+      CORE_BOOTSTRAP_ADMIN_PASSWORD: ${CORE_BOOTSTRAP_ADMIN_PASSWORD:-}
+      CORE_MEDIA_SERVICE_TOKEN: ${CORE_MEDIA_SERVICE_TOKEN:-}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -43,6 +49,7 @@ services:
       dockerfile: apps/web/Dockerfile.card
     environment:
       VITE_API_MODE: api
+      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-demo}
       VITE_PROXY_TARGET: http://core:8080
     ports:
       - "127.0.0.1:5173:5173"
