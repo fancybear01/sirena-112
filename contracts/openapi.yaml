@@ -172,6 +172,19 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/ServiceAssignment" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/analytics/summary:
+    get:
+      summary: Обезличенная сводка оценённых карточных занятий
+      description: |
+        Read-only. Считает только сессии CARD в состоянии SCORED с сохранённым
+        отчётом. Доступ до внедрения RBAC ограничивается контуром демо/шлюзом;
+        endpoint не возвращает карточки, адреса, sessionId или текст ошибок.
+      responses:
+        "200":
+          description: Агрегаты фактических отчётов; при пустом наборе средние равны null
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingAnalyticsSummary" }
   /api/teacher/sessions/{sessionId}:
     get:
       summary: Состояние учебной сессии для преподавателя
@@ -818,6 +831,55 @@ components:
         recommendations:
           type: array
           items: { type: string }
+    TrainingAnalyticsSummary:
+      type: object
+      additionalProperties: false
+      required: [completedSessions, averagePercent, medianPercent, scoreDistribution, incidentTypes, topErrors, daily]
+      properties:
+        completedSessions: { type: integer, minimum: 0 }
+        averagePercent: { type: [number, "null"], minimum: 0, maximum: 100 }
+        medianPercent: { type: [number, "null"], minimum: 0, maximum: 100 }
+        scoreDistribution:
+          type: array
+          description: Последовательные интервалы 0–20, >20–40, >40–60, >60–80, >80–100 процентов.
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, count]
+            properties:
+              label: { type: string }
+              count: { type: integer, minimum: 0 }
+        incidentTypes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, name, count]
+            properties:
+              code: { type: string }
+              name: { type: string }
+              count: { type: integer, minimum: 0 }
+        topErrors:
+          type: array
+          description: Невыполненные коды критериев рубрики, максимум один раз на сессию.
+          items:
+            type: object
+            additionalProperties: false
+            required: [criterionCode, count]
+            properties:
+              criterionCode: { type: string }
+              count: { type: integer, minimum: 0 }
+        daily:
+          type: array
+          description: День завершения занятия в UTC.
+          items:
+            type: object
+            additionalProperties: false
+            required: [day, count, averagePercent]
+            properties:
+              day: { type: string, format: date }
+              count: { type: integer, minimum: 0 }
+              averagePercent: { type: number, minimum: 0, maximum: 100 }
     ApiError:
       type: object
       additionalProperties: false
