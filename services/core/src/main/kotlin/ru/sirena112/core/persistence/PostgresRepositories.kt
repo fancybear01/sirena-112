@@ -128,6 +128,9 @@ class PostgresSessionReportRepository(private val jdbc: JdbcTemplate, private va
     override fun findBySessionIdOrNull(sessionId: UUID): SessionReport? = jdbc.query(
         "SELECT body::text FROM session_reports WHERE session_id = ?", { rs, _ -> mapper.value(rs.getString(1), SessionReport::class.java) }, sessionId
     ).firstOrNull()
+    override fun findAll(): List<SessionReport> = jdbc.query(
+        "SELECT body::text FROM session_reports ORDER BY session_id"
+    ) { rs, _ -> mapper.value(rs.getString(1), SessionReport::class.java) }
 }
 
 class PostgresServiceAssignmentRepository(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) : ServiceAssignmentRepository {
