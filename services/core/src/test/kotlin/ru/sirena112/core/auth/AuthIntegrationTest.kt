@@ -100,6 +100,15 @@ class AuthIntegrationTest {
         } finally {
             SecurityContextHolder.clearContext()
         }
+        val owner = details.loadUserByUsername(studentA.first)
+        SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken(
+            owner, null, owner.authorities)
+        try {
+            access.websocket(UUID.fromString(sessionId))
+            access.websocket(UUID.fromString(sessionId)) // reconnect checks the same ownership again
+        } finally {
+            SecurityContextHolder.clearContext()
+        }
         assertEquals(200, mvc.perform(get("/api/student/sessions/$sessionId").session(studentASession))
             .andReturn().response.status)
         val assignments = mvc.perform(get("/api/student/assignments").session(studentBSession)).andReturn()
