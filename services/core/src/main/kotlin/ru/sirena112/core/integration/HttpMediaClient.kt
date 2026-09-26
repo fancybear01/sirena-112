@@ -12,6 +12,7 @@ import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestTemplate
 import ru.sirena112.core.config.CoreProperties
+import java.net.SocketTimeoutException
 import java.util.UUID
 
 /** HTTP adapter for the command contract in contracts/media-core.md. */
@@ -51,11 +52,20 @@ class HttpMediaClient(
                 "$baseUrl$path", HttpMethod.POST, HttpEntity(body, headers), JsonNode::class.java
             )
         } catch (exception: ResourceAccessException) {
-            throw UpstreamUnavailableException("Media Gateway недоступен", exception)
+            val timedOut = generateSequence(exception as Throwable?) { it.cause }
+                .any { it is SocketTimeoutException }
+            throw UpstreamUnavailableException(
+                if (timedOut) "Media Gateway не ответил вовремя; проверьте состояние звонка перед повтором"
+                else "Media Gateway недоступен", exception
+            )
         } catch (exception: HttpStatusCodeException) {
             when (exception.rawStatusCode) {
                 409 -> throw UpstreamConflictException("Media Gateway: звонок уже активен", exception)
-                503 -> throw UpstreamUnavailableException("Media Gateway не готов: проверьте Asterisk/ARI", exception)
+                503 -> throw UpstreamUnavailableException(
+                    if (exception.responseBodyAsString.contains("\"capacity_exhausted\""))
+                        "Media Gateway перегружен: нет свободных RTP-портов"
+                    else "Media Gateway не готов: проверьте Asterisk/ARI", exception
+                )
                 else -> throw UpstreamProtocolException(
                     "Media Gateway отклонил команду: HTTP ${exception.rawStatusCode}", exception
                 )
