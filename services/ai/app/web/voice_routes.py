@@ -8,13 +8,12 @@
 import asyncio
 import contextlib
 import logging
-import hmac
-import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from starlette.concurrency import run_in_threadpool
 
+from app.web import auth
 from app.schemas.voice import (
     IncomingType,
     OutgoingType,
@@ -34,6 +33,9 @@ stream_router = APIRouter(tags=["voice"])
 # несовпадающей паре идентификаторов, а причину надо различать на стороне Media.
 CLOSE_UNKNOWN_SESSION = 4404
 CLOSE_SESSION_BUSY = 4409
+# Поток без сервисного токена. Media должна отличать это от неверной сессии:
+# лечится не переподключением, а настройкой.
+CLOSE_UNAUTHORIZED = 4401
 
 # Сколько звука разрешено держать в очереди на отправку - десять секунд речи.
 # Реплика абонента занимает секунды три-четыре, так что предел не мешает
@@ -171,18 +173,29 @@ async def voice_stream(
     ai_session_id: str,
     sessionId: str = Query(..., description="Идентификатор учебной сессии в Core"),
 ) -> None:
-    token = os.getenv("AI_SERVICE_TOKEN", "")
-    if token and not hmac.compare_digest(websocket.headers.get("authorization", ""), f"Bearer {token}"):
-        await websocket.close(code=4401)
+    async def refuse(code: int, reason: str) -> None:
+        """Отказывает в потоке и пишет причину в лог.
+
+        Причину надо писать обязательно. Соединение закрывается до
+        рукопожатия, поэтому все отказы выглядят для Media одинаково -
+        как HTTP 403, а код закрытия до неё не доходит. Без записи в логе
+        разобраться, чего не хватило, на демонстрации будет нечем.
+        """
+        log.warning("Голосовой поток %s отклонён: %s (код %d)", ai_session_id, reason, code)
+        await websocket.close(code=code)
+
+    if not auth.accepted(websocket.headers.get(auth.HEADER)):
+        await refuse(CLOSE_UNAUTHORIZED, "нет сервисного токена или он не тот")
         return
+
     session = store().resolve(ai_session_id, sessionId)
     if session is None:
-        await websocket.close(code=CLOSE_UNKNOWN_SESSION)
+        await refuse(CLOSE_UNKNOWN_SESSION, "сессия не найдена или sessionId не совпал")
         return
 
     with session.lock:
         if session.attached:
-            await websocket.close(code=CLOSE_SESSION_BUSY)
+            await refuse(CLOSE_SESSION_BUSY, "к сессии уже подключён другой поток")
             return
         session.attached = True
 
