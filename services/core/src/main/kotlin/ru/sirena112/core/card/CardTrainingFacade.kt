@@ -29,7 +29,8 @@ import java.time.Duration
 import java.util.UUID
 
 /** Контракт 0.3: клиент отправляет только исходные данные оператора. */
-data class CreateCardSessionRequest(val scenarioId: UUID? = null, val mode: SessionMode = SessionMode.CARD)
+data class CreateCardSessionRequest(val scenarioId: UUID? = null, val mode: SessionMode = SessionMode.CARD,
+    val studentId: UUID? = null)
 
 data class SaveCardRequest(
     val input: OperatorCardInput,
@@ -89,7 +90,8 @@ class CardTrainingFacade(
     private val classifierService: ClassifierService,
     private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService,
     private val aiClient: ru.sirena112.core.integration.AiClient,
-    private val reportRepository: SessionReportRepository
+    private val reportRepository: SessionReportRepository,
+    private val access: ru.sirena112.core.auth.SessionAccess
 ) {
 
     fun scenarios(): List<Scenario> = scenarioRepository.findAll().sortedBy { it.groundTruth.classifierCode }
@@ -97,6 +99,7 @@ class CardTrainingFacade(
     fun assignments(): List<StudentAssignmentResponse> = sessionRepository.findAll()
         .asSequence()
         .filter { it.mode == SessionMode.CARD }
+        .filter(access::canSeeAssignment)
         .filter { it.state in setOf(SessionState.ACTIVE, SessionState.SCORING, SessionState.SCORED) }
         .sortedWith(compareByDescending<TrainingSession> { it.state == SessionState.ACTIVE }
             .thenByDescending { it.startedAt ?: it.createdAt })
@@ -116,7 +119,9 @@ class CardTrainingFacade(
     fun createSession(request: CreateCardSessionRequest): SessionView {
         val scenario = scenarioRepository.findById(request.scenarioId ?: DEFAULT_SCENARIO_ID)
             ?: throw NoSuchElementException("Сценарий ${request.scenarioId} не найден")
-        return sessionService.create(scenario, request.mode).toView()
+        val (studentId, teacherId, groupId) = access.assignment(request.studentId)
+        return sessionService.create(scenario, request.mode, studentId = studentId,
+            teacherId = teacherId, groupId = groupId).toView()
     }
 
     fun start(sessionId: UUID): SessionView {

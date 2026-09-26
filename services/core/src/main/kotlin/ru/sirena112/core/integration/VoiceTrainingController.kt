@@ -18,20 +18,21 @@ data class MediaEventReceipt(val eventId: UUID, val accepted: Boolean, val sessi
 
 @RestController
 @RequestMapping("/api/teacher/sessions")
-class VoiceTrainingController(private val voice: VoiceTrainingService) {
+class VoiceTrainingController(private val voice: VoiceTrainingService,
+    private val access: ru.sirena112.core.auth.SessionAccess) {
     @PostMapping("/{sessionId}/call/start")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun start(@PathVariable sessionId: UUID, @RequestBody request: StartVoiceCallRequest): VoiceCallView =
-        voice.start(sessionId, request.sipAddress)
+        voice.start(sessionId.also(access::teacherCanWrite), request.sipAddress)
 
     @PostMapping("/{sessionId}/call/hangup")
-    fun hangup(@PathVariable sessionId: UUID): VoiceCallView = voice.hangup(sessionId)
+    fun hangup(@PathVariable sessionId: UUID): VoiceCallView = voice.hangup(sessionId.also(access::teacherCanWrite))
 
     @GetMapping("/{sessionId}/call")
-    fun call(@PathVariable sessionId: UUID): VoiceCallView = voice.getCall(sessionId)
+    fun call(@PathVariable sessionId: UUID): VoiceCallView = voice.getCall(sessionId.also(access::teacherCanRead))
 
     @GetMapping("/{sessionId}/events")
-    fun events(@PathVariable sessionId: UUID): List<SessionEvent> = voice.events(sessionId)
+    fun events(@PathVariable sessionId: UUID): List<SessionEvent> = voice.events(sessionId.also(access::teacherCanRead))
 }
 
 @RestController

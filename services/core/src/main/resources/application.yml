@@ -28,6 +28,11 @@ server:
 
 core:
   storage: ${CORE_STORAGE:in-memory}
+  auth:
+    enabled: ${CORE_AUTH_ENABLED:false}
+    bootstrap-admin-username: ${CORE_BOOTSTRAP_ADMIN_USERNAME:}
+    bootstrap-admin-password: ${CORE_BOOTSTRAP_ADMIN_PASSWORD:}
+    media-token: ${CORE_MEDIA_SERVICE_TOKEN:}
   scenario-import:
     enabled: ${CORE_SCENARIO_IMPORT_ENABLED:false}
   environment: ${CORE_ENVIRONMENT:local}

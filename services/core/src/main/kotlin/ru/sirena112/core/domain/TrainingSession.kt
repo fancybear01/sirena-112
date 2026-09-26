@@ -59,7 +59,10 @@ class TrainingSession(
     val mode: SessionMode,
     state: SessionState = SessionState.CREATED,
     operatorCard: OperatorCard = OperatorCard(),
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+    val studentId: UUID? = null,
+    val teacherId: UUID? = null,
+    val groupId: UUID? = null
 ) {
     var state: SessionState = state
         private set
@@ -213,8 +216,12 @@ class TrainingSession(
             endedAt: Instant?,
             updatedAt: Instant,
             failureReason: String?,
-            timeLimitEventEmitted: Boolean
-        ): TrainingSession = TrainingSession(id, scenario, mode, state, operatorCard, createdAt).also { session ->
+            timeLimitEventEmitted: Boolean,
+            studentId: UUID? = null,
+            teacherId: UUID? = null,
+            groupId: UUID? = null
+        ): TrainingSession = TrainingSession(id, scenario, mode, state, operatorCard, createdAt,
+            studentId, teacherId, groupId).also { session ->
             session.cardRevision = cardRevision
             session.startedAt = startedAt
             session.endedAt = endedAt

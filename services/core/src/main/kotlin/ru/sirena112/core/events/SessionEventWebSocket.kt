@@ -9,6 +9,9 @@ import org.springframework.web.socket.WebSocketSession
 import org.springframework.web.socket.config.annotation.EnableWebSocket
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
+import org.springframework.web.socket.server.HandshakeInterceptor
+import org.springframework.http.server.ServerHttpRequest
+import org.springframework.http.server.ServerHttpResponse
 import org.springframework.web.socket.handler.TextWebSocketHandler
 import ru.sirena112.core.domain.SessionEvent
 import ru.sirena112.core.domain.SessionEventRepository
@@ -89,10 +92,23 @@ class SessionEventWebSocketHandler(
 class SessionEventWebSocketConfiguration(
     private val events: SessionEventRepository,
     private val subscriptions: SessionEventSubscription,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val access: ru.sirena112.core.auth.SessionAccess,
+    @org.springframework.beans.factory.annotation.Value("\${core.auth.enabled:false}") private val authEnabled: Boolean
 ) : WebSocketConfigurer {
     override fun registerWebSocketHandlers(registry: WebSocketHandlerRegistry) {
-        registry.addHandler(SessionEventWebSocketHandler(events, subscriptions, objectMapper), "/ws/sessions/{sessionId}/events")
-            .setAllowedOrigins("*")
+        val registration = registry.addHandler(SessionEventWebSocketHandler(events, subscriptions, objectMapper),
+            "/ws/sessions/{sessionId}/events")
+            .addInterceptors(object : HandshakeInterceptor {
+                override fun beforeHandshake(request: ServerHttpRequest, response: ServerHttpResponse,
+                    wsHandler: WebSocketHandler, attributes: MutableMap<String, Any>): Boolean {
+                    val id = request.uri.path.removePrefix("/ws/sessions/").removeSuffix("/events")
+                    val sessionId = runCatching { UUID.fromString(id) }.getOrNull() ?: return false
+                    return runCatching { access.websocket(sessionId); true }.getOrDefault(false)
+                }
+                override fun afterHandshake(request: ServerHttpRequest, response: ServerHttpResponse,
+                    wsHandler: WebSocketHandler, exception: Exception?) = Unit
+            })
+        if (!authEnabled) registration.setAllowedOrigins("*")
     }
 }

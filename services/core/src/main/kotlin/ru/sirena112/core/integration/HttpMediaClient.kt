@@ -46,6 +46,7 @@ class HttpMediaClient(
         val headers = HttpHeaders().apply {
             contentType = MediaType.APPLICATION_JSON
             set("X-Request-ID", MDC.get("requestId") ?: UUID.randomUUID().toString())
+            System.getenv("CORE_MEDIA_SERVICE_TOKEN")?.takeIf { it.isNotBlank() }?.let { setBearerAuth(it) }
         }
         val response = try {
             restTemplate.exchange(

@@ -37,6 +37,9 @@ export function createTeacherHttpApi(
   }
 
   return {
+    async getStudents() {
+      return http.request<{ id: string; displayName: string; username: string }[]>('/api/teacher/students');
+    },
     async getScenarios() {
       const payload = await http.request<unknown[]>('/api/teacher/scenarios');
       if (!Array.isArray(payload)) return [];
@@ -71,10 +74,10 @@ export function createTeacherHttpApi(
       ));
     },
 
-    async launchSession(scenarioId) {
+    async launchSession(scenarioId, studentId) {
       const created = normalizeSession(await http.request('/api/teacher/sessions', {
         method: 'POST',
-        body: { scenarioId },
+        body: { scenarioId, ...(studentId ? { studentId } : {}) },
       }));
       const startedAt = created.startedAt ?? new Date().toISOString();
       const started = toTeacherSession(await http.request(

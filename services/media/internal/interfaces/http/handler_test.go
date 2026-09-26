@@ -18,3 +18,21 @@ func TestCapacityExhaustedIsUnavailable(t *testing.T) {
 		t.Fatalf("response: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestInternalRoutesRequireServiceTokenWhenConfigured(t *testing.T) {
+	t.Setenv("CORE_MEDIA_SERVICE_TOKEN", "test-internal-token")
+	h := (&Handler{log: slog.Default()}).Routes()
+	request := httptest.NewRequest(http.MethodGet, "/internal/unknown", nil)
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d", response.Code)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/internal/unknown", nil)
+	request.Header.Set("Authorization", "Bearer test-internal-token")
+	response = httptest.NewRecorder()
+	h.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("authenticated status = %d", response.Code)
+	}
+}

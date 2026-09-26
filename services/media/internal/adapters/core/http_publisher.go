@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ type HTTPPublisher struct {
 	url    string
 	http   *http.Client
 	log    *slog.Logger
+	token  string
 	queue  chan []byte
 	mu     sync.Mutex
 	closed bool
@@ -30,7 +32,7 @@ type HTTPPublisher struct {
 
 func NewHTTPPublisher(base string, log *slog.Logger) *HTTPPublisher {
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &HTTPPublisher{url: strings.TrimRight(base, "/") + "/internal/v1/media/events", http: &http.Client{Timeout: 2 * time.Second}, log: log, queue: make(chan []byte, 256), done: make(chan struct{}), ctx: ctx, cancel: cancel}
+	p := &HTTPPublisher{url: strings.TrimRight(base, "/") + "/internal/v1/media/events", http: &http.Client{Timeout: 2 * time.Second}, log: log, token: os.Getenv("CORE_MEDIA_SERVICE_TOKEN"), queue: make(chan []byte, 256), done: make(chan struct{}), ctx: ctx, cancel: cancel}
 	go p.run()
 	return p
 }
@@ -83,6 +85,9 @@ func (p *HTTPPublisher) post(data []byte) (bool, error) {
 		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
+	}
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return true, err

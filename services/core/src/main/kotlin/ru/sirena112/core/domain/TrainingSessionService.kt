@@ -7,8 +7,9 @@ class TrainingSessionService(
     private val sessions: TrainingSessionRepository,
     private val events: SessionEventRepository
 ) {
-    fun create(scenario: Scenario, mode: SessionMode, sessionId: UUID = UUID.randomUUID()): TrainingSession {
-        val session = TrainingSession(sessionId, scenario, mode)
+    fun create(scenario: Scenario, mode: SessionMode, sessionId: UUID = UUID.randomUUID(),
+        studentId: UUID? = null, teacherId: UUID? = null, groupId: UUID? = null): TrainingSession {
+        val session = TrainingSession(sessionId, scenario, mode, studentId = studentId, teacherId = teacherId, groupId = groupId)
         sessions.save(session)
         append(session, SessionEventType.SESSION_CREATED, EventSource.CORE, mapOf("mode" to mode.name))
         return session
