@@ -22,8 +22,10 @@ REFERENCE = (
 def real_morphology():
     """Каждый тест начинает с настоящего разбора, а не с чужой подмены."""
     text_review.use_morphology(None)
+    text_review.use_semantics(text_review.Semantics(model_path=""))
     yield
     text_review.use_morphology(None)
+    text_review.use_semantics(None)
 
 
 @pytest.fixture()
@@ -289,6 +291,76 @@ def test_without_dictionary_mechanics_still_works(client, scenario_with_referenc
     payload = review(client, scenario_with_reference, description="В подъезде дым дым из мусоропровода")
 
     assert finding(payload, "MECHANICS")["status"] == "FAILED"
+
+
+# --- модель смысла ------------------------------------------------------------
+
+
+class FakeSemantics:
+    """Модель, которая считает синонимами заранее заданные пары."""
+
+    available = True
+
+    def __init__(self, pairs) -> None:
+        self.pairs = {frozenset(pair) for pair in pairs}
+        self.asked = []
+
+    def closest(self, wanted, candidates):
+        self.asked.append(wanted)
+        for candidate in candidates:
+            if frozenset((wanted, candidate)) in self.pairs:
+                return 1.0
+        return 0.0
+
+    def similarity(self, first, second):
+        return 0.0
+
+
+def test_without_model_meaning_falls_back_to_forms(client, scenario_with_reference):
+    """Модели нет - разбор работает на морфологии и не делает вид, что понял."""
+    payload = review(
+        client, scenario_with_reference, description="Жильцы сообщают о дыме из мусоропровода"
+    )
+
+    assert finding(payload, "MEANING")["status"] == "PARTIAL"
+    assert any("синоним" in limitation.lower() for limitation in payload["limitations"])
+
+
+def test_model_is_asked_only_about_missing_words():
+    """Модель дорогая, и звать её на совпавшие слова незачем."""
+    model = FakeSemantics([("автомобиль", "машина")])
+    text_review.use_semantics(model)
+
+    share, missing = text_review.cover({"автомобиль", "перекресток"}, {"машина", "перекресток"}, 0.5)
+
+    assert model.asked == ["автомобиль"], "спрашивали лишнее: %s" % model.asked
+    assert missing == []
+    assert share == 1.0
+
+
+def test_model_closes_a_synonym_gap():
+    model = FakeSemantics([("пострадать", "раненый")])
+    text_review.use_semantics(model)
+
+    without = text_review.cover({"пострадать", "автомобиль"}, {"раненый", "автомобиль"}, 1.1)
+    with_model = text_review.cover({"пострадать", "автомобиль"}, {"раненый", "автомобиль"}, 0.5)
+
+    assert without[1] == ["пострадать"]
+    assert with_model[1] == []
+
+
+def test_unset_model_path_means_no_model(monkeypatch):
+    """Пустая переменная окружения - это не ошибка, а штатный режим."""
+    monkeypatch.delenv(text_review.Semantics.ENVIRONMENT_VARIABLE, raising=False)
+
+    assert text_review.Semantics().available is False
+
+
+def test_broken_model_path_does_not_break_the_service(monkeypatch):
+    """Неверный путь к модели не должен ронять разбор."""
+    monkeypatch.setenv(text_review.Semantics.ENVIRONMENT_VARIABLE, "/нет/такого/пути")
+
+    assert text_review.Semantics().available is False
 
 
 # --- рекомендации группе ------------------------------------------------------

@@ -38,23 +38,57 @@ SELECTION_TOPICS = ("задымление в мусоропроводе", "ДТ�
 GRID = [round(value / 20, 2) for value in range(1, 20)]
 
 
-def meaning_share(case: Dict, method: str) -> float:
-    """Доля отражённых обстоятельств. Два способа посчитать одно и то же."""
+def meaning_share(case: Dict, method: str, match_from: float = 1.1) -> float:
+    """Доля отражённых обстоятельств. Три способа посчитать одно и то же.
+
+    words    - совпадение слов как есть, простое правило до всей этой работы;
+    lemmas   - совпадение начальных форм;
+    semantic - начальные формы плюс поиск синонимов моделью.
+
+    match_from больше единицы означает, что модель не спрашиваем: косинус
+    выше единицы не бывает, и ни одно слово порог не пройдёт.
+    """
     if not case["submitted"].strip():
         return 0.0
-    if method == "lemmas":
-        wanted = text_review.meaningful_lemmas(case["reference"])
-        if not wanted:
-            return 1.0
-        got = text_review.meaningful_lemmas(case["submitted"])
-        return (len(wanted) - len(wanted - got)) / len(wanted)
-    return text_review.baseline_meaning(case["reference"], case["submitted"])
+    if method == "words":
+        return text_review.baseline_meaning(case["reference"], case["submitted"])
+    if method == "sentence":
+        # Модель сравнивает описания целиком - так, как её и учили.
+        return text_review.semantics().similarity(case["reference"], case["submitted"])
+
+    wanted = text_review.meaningful_lemmas(case["reference"])
+    got = text_review.meaningful_lemmas(case["submitted"])
+    threshold = match_from if method == "semantic" else 1.1
+    share, _ = text_review.cover(wanted, got, threshold)
+    return share
 
 
-def meaning_verdict(case: Dict, method: str, passed_from: float, partial_from: float) -> str:
+def meaning_verdict(case: Dict, method: str, passed_from: float, partial_from: float,
+                    match_from: float = 1.1) -> str:
     if not case["submitted"].strip():
         return "FAILED"
-    return text_review.meaning_status(meaning_share(case, method), passed_from, partial_from)
+    return text_review.meaning_status(
+        meaning_share(case, method, match_from), passed_from, partial_from
+    )
+
+
+def pick_match_threshold(cases: List[Dict], passed_from: float, partial_from: float):
+    """Подбирает порог синонимичности при неизменных порогах вердикта.
+
+    Подбирается одно число, а не три. Восемнадцать примеров - слишком мало,
+    чтобы крутить три ручки одновременно и потом называть это замером.
+    """
+    best = (0.0, -1.0)
+    for match_from in GRID:
+        pairs = [
+            (case["expert"]["meaning"],
+             meaning_verdict(case, "semantic", passed_from, partial_from, match_from))
+            for case in cases
+        ]
+        score = macro_f1(pairs)
+        if score > best[1]:
+            best = (match_from, score)
+    return best
 
 
 def pick_thresholds(cases: List[Dict], method: str) -> Tuple[float, float, float]:
@@ -135,11 +169,16 @@ def main() -> int:
     cases = data["cases"]
 
     analyzer = text_review.morphology()
+    model = text_review.semantics()
     print("=" * 78)
     print("Разбор текста против экспертной разметки")
-    print("примеров: %d | морфология: %s" % (len(cases), "есть" if analyzer.available else "НЕТ"))
+    print("примеров: %d | морфология: %s | модель смысла: %s"
+          % (len(cases), "есть" if analyzer.available else "НЕТ",
+             "есть" if model.available else "нет"))
     if not analyzer.available:
         print("ВНИМАНИЕ: словаря нет, грамотность не проверяется, смысл считается грубо.")
+    if not model.available:
+        print("Модель смысла не подключена: задайте AI_SEMANTIC_MODEL, чтобы сравнить с ней.")
     print("=" * 78)
 
     selection = [case for case in cases if case["topic"] in SELECTION_TOPICS]
@@ -153,25 +192,46 @@ def main() -> int:
     for method in ("lemmas", "words"):
         upper, lower, score = pick_thresholds(selection, method)
         chosen[method] = (upper, lower, score)
-        print("   %-8s пороги %.2f и %.2f, точность на подборе %.2f"
+        print("   %-8s пороги %.2f и %.2f, макро-F1 на подборе %.2f"
               % (method, upper, lower, score))
+
+    if model.available:
+        upper, lower, score = pick_thresholds(selection, "sentence")
+        chosen["sentence"] = (upper, lower, score)
+        print("   %-8s пороги %.2f и %.2f, макро-F1 на подборе %.2f"
+              % ("sentence", upper, lower, score))
+
+    match_from = None
+    if model.available:
+        upper, lower, _ = chosen["lemmas"]
+        match_from, match_score = pick_match_threshold(selection, upper, lower)
+        print("   %-8s порог синонимичности %.2f при тех же порогах вердикта, макро-F1 %.2f"
+              % ("semantic", match_from, match_score))
 
     print("\nЗамер на отложенной половине")
     print("   %-28s %-10s %-10s %s" % ("способ", "точность", "макро-F1", "примеров"))
     holdout_pairs: Dict[str, List[Tuple[str, str]]] = {}
-    for method, title in (("lemmas", "разбор по начальным формам"), ("words", "сравнение слов как есть")):
-        upper, lower, _ = chosen[method]
+    ways = [("words", "сравнение слов как есть"), ("lemmas", "разбор по начальным формам")]
+    if model.available:
+        ways.append(("semantic", "формы плюс синонимы по словам"))
+        ways.append(("sentence", "близость описаний моделью"))
+    for method, title in ways:
+        upper, lower, _ = chosen["lemmas" if method == "semantic" else method]
         holdout_pairs[method] = [
-            (case["expert"]["meaning"], meaning_verdict(case, method, upper, lower))
+            (case["expert"]["meaning"],
+             meaning_verdict(case, method, upper, lower, match_from if match_from else 1.1))
             for case in holdout
         ]
         print("   %-28s %-10.2f %-10.2f %d" % (title, accuracy(holdout_pairs[method]),
                                                     macro_f1(holdout_pairs[method]), len(holdout)))
 
-    print("\nСмысл на отложенной половине, по классам")
+    # Лучшим считается тот способ, который выиграл на отложенной половине,
+    # а не тот, который красивее выглядел при подборе.
+    best_method = max(holdout_pairs, key=lambda name: macro_f1(holdout_pairs[name]))
+    print("\nСмысл на отложенной половине, по классам (%s)" % best_method)
     print("   %-10s %-9s %-10s %-9s %s" % ("класс", "примеров", "точность", "полнота", "F1"))
     for label in ("PASSED", "PARTIAL", "FAILED"):
-        metrics = confusion(holdout_pairs["lemmas"], label)
+        metrics = confusion(holdout_pairs[best_method], label)
         print("   %-10s %-9d %-10.2f %-9.2f %.2f"
               % (label, metrics["support"], metrics["precision"], metrics["recall"], metrics["f1"]))
 
@@ -193,7 +253,9 @@ def main() -> int:
     mistakes: List[Dict] = []
     for case in cases:
         got = dict(other_verdicts(case))
-        got["meaning"] = meaning_verdict(case, "lemmas", upper, lower)
+        got["meaning"] = meaning_verdict(
+            case, best_method, upper, lower, match_from if match_from else 1.1
+        )
         wrong = [check for check in ("meaning", "spelling", "mechanics")
                  if case["expert"][check] != got[check]]
         if wrong:
@@ -217,12 +279,14 @@ def main() -> int:
         "thresholds": {method: {"passedFrom": value[0], "partialFrom": value[1],
                                 "selectionMacroF1": value[2]}
                        for method, value in chosen.items()},
+        "semanticMatchFrom": match_from,
+        "semanticModel": model.available,
         "holdout": {
             "cases": len(holdout),
             "accuracy": {method: accuracy(pairs) for method, pairs in holdout_pairs.items()},
             "macroF1": {method: macro_f1(pairs) for method, pairs in holdout_pairs.items()},
             "meaning_by_class": {
-                label: confusion(holdout_pairs["lemmas"], label)
+                label: confusion(holdout_pairs[best_method], label)
                 for label in ("PASSED", "PARTIAL", "FAILED")
             },
         },

@@ -16,9 +16,10 @@
 в ограничениях, что грамотность не проверялась.
 """
 
+import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 # Точность проверок, измеренная на разметке из benchmarks/text_review.
 # Числа не выдуманы: как они получены, написано в docs/ai-text-review.md.
@@ -55,6 +56,12 @@ TRUSTED_FROM = 0.9
 # и числа - в docs/ai-text-review.md.
 MEANING_PASSED_FROM = 0.8
 MEANING_PARTIAL_FROM = 0.05
+
+# Насколько близкими должны быть векторы, чтобы считать слова синонимами.
+# Подобрано на той же половине разметки, что и пороги выше, и при
+# неизменных порогах вердикта: иначе три числа на восемнадцати примерах
+# подгонялись бы друг под друга.
+SEMANTIC_MATCH_FROM = 0.7
 
 WORDS = re.compile(r"[^\w\-]+", re.UNICODE)
 CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
@@ -159,6 +166,90 @@ def meaningful_lemmas(text: Optional[str]) -> Set[str]:
     return result
 
 
+class Semantics:
+    """Сравнение слов по смыслу нейросетевой моделью.
+
+    Нужна ровно для одного: морфология приводит "дыме" к "дым", но "машину"
+    к "автомобилю" не приведёт. На разметке все шесть ошибок смыслового
+    разбора были именно такими - пересказ синонимами. Подробности замера
+    в docs/ai-text-review.md.
+
+    Модель берётся локальная, по пути из переменной окружения. Сама она
+    ничего не качает: если пути нет или модель не грузится, класс говорит
+    об этом прямо, и разбор возвращается к сравнению начальных форм.
+    """
+
+    ENVIRONMENT_VARIABLE = "AI_SEMANTIC_MODEL"
+
+    def __init__(self, model_path: Optional[str] = None) -> None:
+        self._model = None
+        self._vectors: Dict[str, object] = {}
+        path = model_path or os.getenv(self.ENVIRONMENT_VARIABLE, "")
+        if not path:
+            return
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            self._model = SentenceTransformer(path, device="cpu")
+        except Exception:  # noqa: BLE001 - отсутствие модели не ошибка сервиса
+            self._model = None
+
+    @property
+    def available(self) -> bool:
+        return self._model is not None
+
+    def _vector(self, word: str):
+        if word not in self._vectors:
+            self._vectors[word] = self._model.encode(
+                word, normalize_embeddings=True, show_progress_bar=False
+            )
+        return self._vectors[word]
+
+    def similarity(self, first: str, second: str) -> float:
+        """Близость двух текстов целиком.
+
+        Модель обучена именно на предложениях, поэтому так она работает
+        по назначению. На отдельных словах она складывает всё в узкую
+        полосу: синонимы дают 0.90-0.98, а несвязанные слова 0.80-0.88,
+        и порог между ними не ставится.
+        """
+        if not self.available or not first.strip() or not second.strip():
+            return 0.0
+        left = self._vector(first)
+        right = self._vector(second)
+        return float(sum(a * b for a, b in zip(left, right)))
+
+    def closest(self, wanted: str, candidates: Sequence[str]) -> float:
+        """Насколько близкое по смыслу слово нашлось. Ноль - ничего похожего."""
+        if not self.available or not candidates:
+            return 0.0
+        target = self._vector(wanted)
+        best = 0.0
+        for candidate in candidates:
+            # Косинус: векторы уже нормированы, поэтому это просто сумма
+            # произведений. Numpy тут есть, он приехал вместе с моделью.
+            similarity = float(sum(a * b for a, b in zip(target, self._vector(candidate))))
+            best = max(best, similarity)
+        return best
+
+
+_semantics: Optional[Semantics] = None
+
+
+def semantics() -> Semantics:
+    """Одна модель на процесс: грузить её на каждый запрос слишком дорого."""
+    global _semantics
+    if _semantics is None:
+        _semantics = Semantics()
+    return _semantics
+
+
+def use_semantics(replacement: Optional[Semantics]) -> None:
+    """Подмена для тестов и для замера: надо проверять оба режима."""
+    global _semantics
+    _semantics = replacement
+
+
 @dataclass
 class Finding:
     """Вывод одной проверки."""
@@ -203,6 +294,35 @@ def meaning_status(share: float, passed_from: float = None, partial_from: float 
 # --- проверки -----------------------------------------------------------------
 
 
+def cover(wanted: Set[str], got: Set[str], match_from: float = None) -> Tuple[float, List[str]]:
+    """Какая доля обстоятельств эталона нашлась и чего не хватило.
+
+    Сначала ищется точное совпадение начальных форм - это дёшево и надёжно.
+    Что не нашлось, проверяется моделью на синонимы, если она подключена.
+    Порядок именно такой: модель дорогая, и звать её на совпавшие слова
+    незачем.
+    """
+    if not wanted:
+        return 1.0, []
+
+    missing = sorted(wanted - got)
+    if not missing:
+        return 1.0, []
+
+    model = semantics()
+    if model.available:
+        threshold = SEMANTIC_MATCH_FROM if match_from is None else match_from
+        candidates = sorted(got)
+        still_missing = [
+            word for word in missing if model.closest(word, candidates) < threshold
+        ]
+    else:
+        still_missing = missing
+
+    share = (len(wanted) - len(still_missing)) / len(wanted)
+    return share, still_missing
+
+
 def check_meaning(expected: Optional[str], actual: Optional[str]) -> Finding:
     """Отражены ли в тексте обстоятельства эталона.
 
@@ -216,8 +336,7 @@ def check_meaning(expected: Optional[str], actual: Optional[str]) -> Finding:
         return Finding("MEANING", "FAILED", "описание не заполнено").settle()
 
     got = meaningful_lemmas(actual)
-    missing = sorted(wanted - got)
-    share = (len(wanted) - len(missing)) / len(wanted)
+    share, missing = cover(wanted, got)
     status = meaning_status(share)
     if not missing:
         explanation = "обстоятельства эталона отражены"
