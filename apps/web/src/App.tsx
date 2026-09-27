@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { authApi, pathForRole, secureAuth, type CurrentUser } from './api/auth';
 import { AdminPage } from './features/admin/AdminPage';
+import { TrainingBoardPage } from './features/board/TrainingBoardPage';
 import { StudentPage } from './features/student/StudentPage';
 import { TeacherPage } from './features/teacher/TeacherPage';
 import { AppLayout } from './layout/AppLayout';
@@ -26,6 +27,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/board" element={<Protected role="TEACHER"><TrainingBoardPage /></Protected>} />
       <Route element={<AppLayout />}>
         <Route path="/admin" element={<Protected role="ADMIN"><AdminPage /></Protected>} />
         <Route path="/teacher" element={<Protected role="TEACHER"><TeacherPage /></Protected>} />

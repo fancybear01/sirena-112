@@ -261,6 +261,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TrainingAnalyticsSummary" }
+  /api/teacher/board:
+    get:
+      summary: Обезличенный снимок внешнего учебного табло
+      description: |
+        Read-only. Возвращает активные занятия доступной преподавателю группы и
+        агрегированную аналитику. Не содержит пользователей, карточек, адресов,
+        телефонов, транскриптов, идентификаторов сессий или индивидуальных баллов.
+      responses:
+        "200":
+          description: Текущий снимок табло
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingBoardSnapshot" }
   /api/teacher/sessions/{sessionId}:
     get:
       summary: Состояние учебной сессии для преподавателя
@@ -1010,6 +1023,29 @@ components:
               day: { type: string, format: date }
               count: { type: integer, minimum: 0 }
               averagePercent: { type: number, minimum: 0, maximum: 100 }
+    TrainingBoardSession:
+      type: object
+      additionalProperties: false
+      required: [scenarioTitle, mode, state, startedAt, updatedAt]
+      description: Обезличенное состояние одного незавершённого учебного процесса.
+      properties:
+        scenarioTitle: { type: string, minLength: 1 }
+        mode: { type: string, enum: [CARD, VOICE] }
+        state:
+          type: string
+          enum: [CREATED, READY, RINGING, ACTIVE, SCORING]
+        startedAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TrainingBoardSnapshot:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, activeSessions, analytics]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        activeSessions:
+          type: array
+          items: { $ref: "#/components/schemas/TrainingBoardSession" }
+        analytics: { $ref: "#/components/schemas/TrainingAnalyticsSummary" }
     ApiError:
       type: object
       additionalProperties: false

@@ -318,10 +318,15 @@ export function TeacherPage({
 
   return (
     <Stack className="teacher-page" gap="xl">
-      <div>
-        <Title order={1}>Сценарии</Title>
-        <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
-      </div>
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={1}>Сценарии</Title>
+          <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
+        </div>
+        <Button component="a" href="/board" target="_blank" rel="noreferrer" variant="light">
+          Открыть учебное табло
+        </Button>
+      </Group>
       {secureAuth && <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />}
 
       <TeacherAnalytics
