@@ -8,7 +8,7 @@ import { TeacherPage } from './TeacherPage';
 import { createTeacherMockApi } from './api/teacherMockApi';
 import { pollingTeacherSessionEvents } from './api/teacherSessionEvents';
 import type { ServiceAssignment, ServiceStatus, SessionReport } from '../../api/types';
-import type { TeacherApi, TeacherSessionEvents } from './api/types';
+import type { TeacherAnalyticsSummary, TeacherApi, TeacherSessionEvents } from './api/types';
 
 beforeAll(() => {
   globalThis.ResizeObserver = class implements ResizeObserver {
@@ -75,7 +75,61 @@ function makeServiceAssignment(
   };
 }
 
+function makeAnalytics(overrides: Partial<TeacherAnalyticsSummary> = {}): TeacherAnalyticsSummary {
+  return {
+    completedSessions: 3,
+    averagePercent: 68.3,
+    medianPercent: 70,
+    scoreDistribution: [
+      { label: '0–20', count: 0 },
+      { label: '>20–40', count: 0 },
+      { label: '>40–60', count: 1 },
+      { label: '>60–80', count: 1 },
+      { label: '>80–100', count: 1 },
+    ],
+    incidentTypes: [{ code: '1050602', name: 'Задымление', count: 3 }],
+    topErrors: [
+      { criterionCode: 'ADDRESS', count: 2 },
+      { criterionCode: 'VICTIMS', count: 1 },
+    ],
+    daily: [
+      { day: '2026-09-26', count: 1, averagePercent: 55 },
+      { day: '2026-09-27', count: 2, averagePercent: 75 },
+    ],
+    ...overrides,
+  };
+}
+
 describe('teacher scenario flow', () => {
+  it('renders a non-empty Core analytics summary with three views and its scope', async () => {
+    renderTeacher(createTeacherMockApi({ analytics: makeAnalytics(), delayMs: 0 }));
+
+    expect(await screen.findByText('Занятий: 3')).toBeInTheDocument();
+    expect(screen.getByText('68,3%')).toBeInTheDocument();
+    expect(screen.getByText('Выборка:').parentElement).toHaveTextContent('оценённые карточные занятия');
+    expect(screen.getByText('Период UTC:').parentElement).toHaveTextContent('26 сент. — 27 сент.');
+    expect(screen.getByRole('heading', { name: 'Динамика оценок' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Распределение результатов' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Частота ошибок по критериям' })).toHaveTextContent('ADDRESS');
+  });
+
+  it('renders an explicit empty analytics state instead of zero-result charts', async () => {
+    renderTeacher(createTeacherMockApi({ delayMs: 0 }));
+
+    expect(await screen.findByText('Нет оценённых занятий')).toBeInTheDocument();
+    expect(screen.getByText('Период UTC:').parentElement).toHaveTextContent('нет данных');
+    expect(screen.queryByRole('heading', { name: 'Распределение результатов' })).not.toBeInTheDocument();
+  });
+
+  it('separates an analytics API error from an empty summary', async () => {
+    renderTeacher(createTeacherMockApi({ failAnalytics: true, delayMs: 0 }));
+
+    const alert = await screen.findByRole('alert', { name: 'Аналитика не загрузилась' });
+    expect(alert).toHaveTextContent('Проверьте соединение');
+    expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument();
+    expect(screen.queryByText('Нет оценённых занятий')).not.toBeInTheDocument();
+  });
+
   it('selects a scenario, starts and completes a session', async () => {
     const user = userEvent.setup();
     renderTeacher();
@@ -188,8 +242,12 @@ describe('teacher scenario flow', () => {
       recommendations: [],
     };
     let activeReads = 0;
+    const getAnalytics = vi.fn()
+      .mockResolvedValueOnce(makeAnalytics({ completedSessions: 2 }))
+      .mockResolvedValue(makeAnalytics());
     const api: TeacherApi = {
       ...base,
+      getAnalytics,
       async getCurrentSession() {
         const current = await base.getCurrentSession();
         if (!current || activeReads++ === 0) return current;
@@ -207,6 +265,8 @@ describe('teacher scenario flow', () => {
 
     expect(await screen.findByText(/Оценка: 84 из 100/)).toBeInTheDocument();
     expect(screen.getByText('SCORED')).toBeInTheDocument();
+    expect(await screen.findByText('Занятий: 3')).toBeInTheDocument();
+    expect(getAnalytics).toHaveBeenCalledTimes(2);
   });
 
   it('filters scenarios by difficulty', async () => {

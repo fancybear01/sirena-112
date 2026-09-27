@@ -37,6 +37,10 @@ export function createTeacherHttpApi(
   }
 
   return {
+    async getAnalytics() {
+      return http.request('/api/teacher/analytics/summary');
+    },
+
     async getStudents() {
       return http.request<{ id: string; displayName: string; username: string }[]>('/api/teacher/students');
     },
