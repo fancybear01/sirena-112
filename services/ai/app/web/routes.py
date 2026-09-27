@@ -11,12 +11,18 @@
 from fastapi import APIRouter
 
 from app.config import SERVICE_NAME, SERVICE_VERSION, settings
-from app.engines import catalog_scenarios, rule_dialogue, rule_scoring
+from app.engines import card_text, catalog_scenarios, group_advice, rule_dialogue, rule_scoring
 from app.schemas.common import CamelModel
 from app.voice.speech import get_pipeline
 from app.schemas.dialogue import DialogueRequest, DialogueResponse
 from app.schemas.generation import ScenarioGenerateRequest, ScenarioGenerateResponse
 from app.schemas.scoring import ScoreRequest, ScoreResponse
+from app.schemas.text import (
+    GroupRecommendationsRequest,
+    GroupRecommendationsResponse,
+    TextReviewRequest,
+    TextReviewResponse,
+)
 
 
 class HealthResponse(CamelModel):
@@ -80,3 +86,31 @@ def dialogue_respond(request: DialogueRequest) -> DialogueResponse:
 def score_session(request: ScoreRequest) -> ScoreResponse:
     """Считает объяснимый отчёт. Итоговую оценку сохраняет Core, а не AI."""
     return rule_scoring.score(request)
+
+
+@ai_router.post(
+    "/text/review",
+    response_model=TextReviewResponse,
+    summary="Разобрать текст карточки: смысл, грамотность, регламент, время",
+    response_model_exclude_none=True,
+)
+def review_text(request: TextReviewRequest) -> TextReviewResponse:
+    """Разбирает то, что оператор написал руками.
+
+    У каждого вывода указана измеренная точность, а вывод, которому верить
+    нельзя, помечен как требующий проверки преподавателем.
+    """
+    return card_text.review(request)
+
+
+@ai_router.post(
+    "/groups/recommendations",
+    response_model=GroupRecommendationsResponse,
+    summary="Рекомендации преподавателю по типичным ошибкам группы",
+    response_model_exclude_none=True,
+)
+def group_recommendations(
+    request: GroupRecommendationsRequest,
+) -> GroupRecommendationsResponse:
+    """Считает по присланным отчётам. Своей истории и базы у AI нет."""
+    return group_advice.recommend(request)
