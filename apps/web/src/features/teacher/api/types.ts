@@ -6,6 +6,7 @@ import type {
   Session,
   SessionEvent,
   SessionState as CoreSessionState,
+  TrainingAnalyticsSummary,
 } from '../../../api/types';
 
 export type ScenarioDifficulty = CoreScenarioDifficulty;
@@ -13,6 +14,7 @@ export type ScenarioStatus = 'READY' | 'DRAFT';
 export type SessionState = CoreSessionState;
 export type TeacherServiceAssignment = ServiceAssignment;
 export type TeacherSessionEvent = SessionEvent;
+export type TeacherAnalyticsSummary = TrainingAnalyticsSummary;
 
 export type TeacherLiveConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'polling';
 
@@ -36,6 +38,7 @@ export type TeacherSession = Omit<Session, 'card' | 'startedAt' | 'endedAt'> & {
 };
 
 export interface TeacherApi {
+  getAnalytics(): Promise<TeacherAnalyticsSummary>;
   getStudents?(): Promise<{ id: string; displayName: string; username: string }[]>;
   getScenarios(): Promise<TeacherScenario[]>;
   getCurrentSession(): Promise<TeacherSession | null>;

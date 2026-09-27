@@ -20,9 +20,11 @@ import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { teacherApi, teacherSessionEvents } from './api/teacherApi';
+import { TeacherAnalytics } from './TeacherAnalytics';
 import type {
   ScenarioDifficulty,
   TeacherApi,
+  TeacherAnalyticsSummary,
   TeacherLiveConnectionState,
   TeacherScenario,
   TeacherServiceAssignment,
@@ -135,7 +137,19 @@ export function TeacherPage({
   const [isLaunching, setIsLaunching] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [analytics, setAnalytics] = useState<TeacherAnalyticsSummary | null>(null);
+  const [analyticsError, setAnalyticsError] = useState('');
   const timer = useSessionTimer(session);
+
+  const loadAnalytics = useCallback(async () => {
+    setAnalyticsError('');
+    setAnalytics(null);
+    try {
+      setAnalytics(await api.getAnalytics());
+    } catch (error) {
+      setAnalyticsError(getApiErrorMessage(error, 'Не удалось загрузить сводку.'));
+    }
+  }, [api]);
 
   const loadScenarios = useCallback(async () => {
     setListError('');
@@ -161,6 +175,14 @@ export function TeacherPage({
   useEffect(() => {
     void loadScenarios();
   }, [loadScenarios]);
+
+  useEffect(() => {
+    void loadAnalytics();
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    if (session?.state === 'SCORED' && session.report) void loadAnalytics();
+  }, [loadAnalytics, session?.id, session?.report?.score, session?.state]);
 
   useEffect(() => {
     if (secureAuth && api.getStudents) {
@@ -299,6 +321,12 @@ export function TeacherPage({
         <Title order={1}>Сценарии</Title>
         <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
       </div>
+
+      <TeacherAnalytics
+        summary={analytics}
+        error={analyticsError}
+        onRetry={() => void loadAnalytics()}
+      />
 
       {operationError && (
         <Alert color="red" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setOperationError('')}>

@@ -77,6 +77,27 @@ const serviceAssignment = {
 };
 
 describe('Core API adapters', () => {
+  it('loads the teacher analytics summary through the contract endpoint', async () => {
+    const summary = {
+      completedSessions: 0,
+      averagePercent: null,
+      medianPercent: null,
+      scoreDistribution: [],
+      incidentTypes: [],
+      topErrors: [],
+      daily: [],
+    };
+    const request = vi.fn().mockResolvedValue(summary);
+    const api = createTeacherHttpApi(
+      { baseUrl: 'https://core.example.test' },
+      { request } as HttpClient,
+      null,
+    );
+
+    await expect(api.getAnalytics()).resolves.toEqual(summary);
+    expect(request).toHaveBeenCalledWith('/api/teacher/analytics/summary');
+  });
+
   it('creates and starts a teacher session through contract endpoints', async () => {
     const request = vi.fn()
       .mockResolvedValueOnce({ ...activeSession, state: 'CREATED' })

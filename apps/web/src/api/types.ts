@@ -250,6 +250,30 @@ export type SessionReport = {
   recommendations: string[];
 };
 
+export type TrainingAnalyticsSummary = {
+  completedSessions: number;
+  averagePercent: number | null;
+  medianPercent: number | null;
+  scoreDistribution: Array<{
+    label: string;
+    count: number;
+  }>;
+  incidentTypes: Array<{
+    code: string;
+    name: string;
+    count: number;
+  }>;
+  topErrors: Array<{
+    criterionCode: string;
+    count: number;
+  }>;
+  daily: Array<{
+    day: string;
+    count: number;
+    averagePercent: number;
+  }>;
+};
+
 export type SessionState =
   | 'CREATED'
   | 'READY'
