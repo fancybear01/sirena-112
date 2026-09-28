@@ -1,0 +1,17 @@
+services:
+  ai:
+    build: null
+  asterisk:
+    build: null
+  media:
+    build: null
+  core:
+    build: null
+  web:
+    build: null
+  monitor:
+    build: null
+  card-smoke:
+    build: null
+  voice-smoke:
+    build: null

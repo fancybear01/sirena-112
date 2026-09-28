@@ -149,7 +149,14 @@ class PiperSynthesizer:
         # Event loop замок не держит: он в рабочем потоке, а не в обработчике.
         with self._lock:
             with wave.open(buffer, "wb") as writer:
-                self._voice.synthesize_wav(text, writer)
+                synthesize_wav = getattr(self._voice, "synthesize_wav", None)
+                if synthesize_wav is not None:
+                    synthesize_wav(text, writer)
+                else:
+                    # Piper 1.2.0 (последний MIT-релиз) называет этот метод
+                    # synthesize; новые релизы сохранили ту же семантику под
+                    # именем synthesize_wav.
+                    self._voice.synthesize(text, writer)
         buffer.seek(0)
         with wave.open(buffer, "rb") as reader:
             audio = reader.readframes(reader.getnframes())

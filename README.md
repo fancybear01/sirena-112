@@ -62,22 +62,23 @@
 
 ## Локальная инфраструктура
 
-Скопируйте `.env.example` в `.env`, замените тестовые секреты и запустите:
+Единый автономный стенд Web + Core + AI + Media + Asterisk + PostgreSQL +
+мониторинг, подготовка `offline-bundle`, команды Windows/Ubuntu, smoke-тесты и
+диагностика описаны в [`docs/offline-full-stack.md`](docs/offline-full-stack.md).
 
-```bash
-docker compose up -d postgres
-docker compose up -d --build asterisk media
+После подготовки образов и моделей локальный запуск на Windows выполняется так:
+
+```powershell
+.\scripts\stack.ps1 init
+.\scripts\stack.ps1 doctor
+.\scripts\stack.ps1 start
+.\scripts\stack.ps1 smoke
 ```
 
-Для устойчивого Core с PostgreSQL (миграции Flyway запускаются автоматически):
-
-```bash
-docker compose up -d --build postgres core
-```
-
-Core использует PostgreSQL при `CORE_STORAGE=postgres`. Значение `in-memory`
-оставлено только для unit-тестов и изолированного карточного демо; оно не
-переживает перезапуск процесса.
+На Ubuntu используйте те же действия через `bash scripts/stack.sh`. Штатный
+`start` не собирает и не скачивает ничего: используются только заранее
+загруженные образы и локальные модели. PostgreSQL работает в именованном томе и
+переживает `restart`/`stop`.
 
 Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).  
 Media Gateway: [`services/media/README.md`](services/media/README.md), контракт [`contracts/media-core.md`](contracts/media-core.md).

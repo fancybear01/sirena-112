@@ -22,6 +22,12 @@ class Settings:
         # На этом этапе доступен только mock, локальные модели подключаются
         # отдельными задачами и не меняют контракт.
         self.engine = os.getenv("AI_ENGINE", "mock")
+        self.require_real_speech = os.getenv("AI_REQUIRE_REAL_SPEECH", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
 
 settings = Settings()
