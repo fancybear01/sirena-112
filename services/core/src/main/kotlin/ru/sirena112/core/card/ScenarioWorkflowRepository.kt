@@ -11,7 +11,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 enum class ScenarioStatus { DRAFT, APPROVED }
-enum class ScenarioSource { MANUAL, AI, COPY }
+enum class ScenarioSource { MANUAL, AI, COPY, STUDENT }
 data class ScenarioWorkflow(
     val id: UUID,
     val familyId: UUID,
@@ -22,7 +22,8 @@ data class ScenarioWorkflow(
     val comment: String,
     val ownerId: UUID?,
     val groupId: UUID?,
-    val source: ScenarioSource
+    val source: ScenarioSource,
+    val sourceSessionId: UUID? = null
 )
 
 interface ScenarioWorkflowRepository {
@@ -37,6 +38,7 @@ class InMemoryScenarioWorkflowRepository : ScenarioWorkflowRepository {
     private val data = ConcurrentHashMap<UUID, ScenarioWorkflow>()
     @Synchronized override fun insert(item: ScenarioWorkflow) {
         require(data.values.none { it.familyId == item.familyId && it.version == item.version }) { "Версия уже существует" }
+        require(item.sourceSessionId == null || data.values.none { it.sourceSessionId == item.sourceSessionId }) { "Карточка уже предложена" }
         check(data.putIfAbsent(item.id, item) == null) { "Сценарий уже существует" }
     }
     @Synchronized override fun updateDraft(item: ScenarioWorkflow, expectedRevision: Int): Boolean {
@@ -51,10 +53,10 @@ class InMemoryScenarioWorkflowRepository : ScenarioWorkflowRepository {
 
 class PostgresScenarioWorkflowRepository(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) : ScenarioWorkflowRepository {
     override fun insert(item: ScenarioWorkflow) {
-        jdbc.update("""INSERT INTO scenario_workflow(id, family_id, version, revision, status, body, comment, owner_id, group_id, source)
-            VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?)""", item.id, item.familyId, item.version,
+        jdbc.update("""INSERT INTO scenario_workflow(id, family_id, version, revision, status, body, comment, owner_id, group_id, source, source_session_id)
+            VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?)""", item.id, item.familyId, item.version,
             item.revision, item.status.name, mapper.writeValueAsString(item.scenario), item.comment,
-            item.ownerId, item.groupId, item.source.name)
+            item.ownerId, item.groupId, item.source.name, item.sourceSessionId)
     }
     override fun updateDraft(item: ScenarioWorkflow, expectedRevision: Int): Boolean = jdbc.update(
         """UPDATE scenario_workflow SET revision=?, status=?, body=CAST(? AS jsonb), comment=?, updated_at=now()
@@ -67,7 +69,7 @@ class PostgresScenarioWorkflowRepository(private val jdbc: JdbcTemplate, private
         rs.getInt("revision"), ScenarioStatus.valueOf(rs.getString("status")),
         mapper.readValue(rs.getString("body"), Scenario::class.java), rs.getString("comment"),
         rs.getObject("owner_id", UUID::class.java), rs.getObject("group_id", UUID::class.java),
-        ScenarioSource.valueOf(rs.getString("source"))
+        ScenarioSource.valueOf(rs.getString("source")), rs.getObject("source_session_id", UUID::class.java)
     ) }
 }
 

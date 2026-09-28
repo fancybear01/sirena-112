@@ -9,6 +9,7 @@ CREATE TABLE scenario_workflow (
     owner_id UUID,
     group_id UUID,
     source VARCHAR(16) NOT NULL,
+    source_session_id UUID UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (family_id, version)

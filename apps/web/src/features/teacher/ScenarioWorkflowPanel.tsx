@@ -9,7 +9,7 @@ import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 
 type Workflow = {
   id: string; familyId: string; version: number; revision: number; status: 'DRAFT' | 'APPROVED';
-  scenario: Record<string, unknown>; comment: string; source: 'MANUAL' | 'AI' | 'COPY';
+  scenario: Record<string, unknown>; comment: string; source: 'MANUAL' | 'AI' | 'COPY' | 'STUDENT';
 };
 type Student = { id: string; username: string; displayName: string };
 type SourceScenario = Record<string, unknown> & { id: string; title: string };
@@ -148,7 +148,7 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
           }, 'Занятия назначены всей группе.')}>Назначить группе</Button>
         </Group>}
       </>}
-      <Text size="xs" c="dimmed">Смешанный режим карточек, созданных самими студентами, пока не поддерживается и не входит в этот путь назначения.</Text>
+      <Text size="xs" c="dimmed">Предложения студентов из оценённых карточек появляются в этом списке как черновики. Преподаватель проверяет эталон и решает, утверждать ли их.</Text>
     </Stack>
   </Paper>;
 }

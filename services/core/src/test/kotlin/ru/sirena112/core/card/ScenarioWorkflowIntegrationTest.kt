@@ -26,6 +26,13 @@ import ru.sirena112.core.auth.LoginRequest
 import ru.sirena112.core.auth.Role
 import ru.sirena112.core.auth.TrainingGroup
 import ru.sirena112.core.domain.ScenarioRepository
+import ru.sirena112.core.domain.TrainingSessionService
+import ru.sirena112.core.domain.SessionMode
+import ru.sirena112.core.domain.OperatorCard
+import ru.sirena112.core.classifier.ClassifierService
+import ru.sirena112.core.classifier.CallerInput
+import ru.sirena112.core.classifier.PhoneNumberInput
+import ru.sirena112.core.classifier.AddressInput
 import java.util.UUID
 
 @SpringBootTest(properties = [
@@ -41,6 +48,8 @@ class ScenarioWorkflowIntegrationTest {
     @Autowired lateinit var accounts: AccountRepository
     @Autowired lateinit var groups: GroupRepository
     @Autowired lateinit var encoder: PasswordEncoder
+    @Autowired lateinit var sessionService: TrainingSessionService
+    @Autowired lateinit var classifier: ClassifierService
     @Autowired @Qualifier("aiRestTemplate") lateinit var aiHttp: RestTemplate
 
     private fun login(username: String): MockHttpSession {
@@ -122,5 +131,49 @@ class ScenarioWorkflowIntegrationTest {
             .response.contentAsString.contains(id))
         assertEquals(403, mvc.perform(get("/api/teacher/scenarios/workflow/$id").session(foreignSession))
             .andReturn().response.status)
+    }
+
+    @Test fun `student proposes sanitized scored card once for teacher approval`() {
+        val group = TrainingGroup(UUID.randomUUID(), "student-proposals-${UUID.randomUUID()}")
+        groups.insert(group)
+        val student = AuthAccount(UUID.randomUUID(), "s${UUID.randomUUID().toString().replace("-", "").take(12)}",
+            encoder.encode("teacher-password-123"), Role.STUDENT, "Student", group.id)
+        accounts.insert(student)
+        val teacher = AuthAccount(UUID.randomUUID(), "t${UUID.randomUUID().toString().replace("-", "").take(12)}",
+            encoder.encode("teacher-password-123"), Role.TEACHER, "Teacher", group.id)
+        accounts.insert(teacher)
+        val studentSession = login(student.username)
+        val teacherSession = login(teacher.username)
+        val scenario = scenarios.findAll().first()
+        val original = scenario.groundTruth.expectedInput
+        val input = original.copy(caller = CallerInput(fullName = "PRIVATE_NAME",
+            phoneNumbers = listOf(PhoneNumberInput("PRIVATE_PHONE", "PROVIDED"))),
+            address = AddressInput("PRIVATE_ADDRESS"))
+        val session = sessionService.create(scenario, SessionMode.CARD, studentId = student.id, groupId = group.id)
+        sessionService.markReady(session.id)
+        sessionService.startCard(session.id)
+        sessionService.updateCard(session.id, OperatorCard(input, classifier.calculate(input)))
+        sessionService.complete(session.id)
+        sessionService.startScoring(session.id)
+        sessionService.completeScoring(session.id)
+        val proposal = mvc.perform(post("/api/student/scenario-proposals").session(studentSession).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"sessionId\":\"${session.id}\"}"))
+            .andReturn()
+        assertEquals(201, proposal.response.status, proposal.response.contentAsString)
+        assertEquals("STUDENT", mapper.readTree(proposal.response.contentAsString)["source"].asText())
+        val proposalId = mapper.readTree(proposal.response.contentAsString)["id"].asText()
+        assertEquals(false, proposal.response.contentAsString.contains("PRIVATE_NAME"))
+        assertEquals(false, proposal.response.contentAsString.contains("PRIVATE_PHONE"))
+        assertEquals(false, proposal.response.contentAsString.contains("PRIVATE_ADDRESS"))
+        assertEquals(409, mvc.perform(post("/api/student/scenario-proposals").session(studentSession).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"sessionId\":\"${session.id}\"}"))
+            .andReturn().response.status)
+        assertEquals(true, mvc.perform(get("/api/teacher/scenarios/workflow").session(teacherSession))
+            .andReturn().response.contentAsString.contains(proposalId))
+        assertEquals(200, mvc.perform(post("/api/teacher/scenarios/workflow/$proposalId/approve?expectedRevision=0")
+            .session(teacherSession).with(csrf())).andReturn().response.status)
+        assertEquals(201, mvc.perform(post("/api/teacher/scenarios/workflow/$proposalId/assign")
+            .session(teacherSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"studentId\":\"${student.id}\"}")).andReturn().response.status)
     }
 }

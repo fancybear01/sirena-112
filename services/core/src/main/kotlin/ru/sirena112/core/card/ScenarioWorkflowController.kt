@@ -22,8 +22,15 @@ import ru.sirena112.core.auth.SessionAccess
 import ru.sirena112.core.classifier.CalculationStatus
 import ru.sirena112.core.classifier.ClassifierCatalog
 import ru.sirena112.core.classifier.ClassifierService
+import ru.sirena112.core.classifier.OperatorCardInput
+import ru.sirena112.core.classifier.IncidentInput
+import ru.sirena112.core.classifier.AddressInput
 import ru.sirena112.core.config.CoreProperties
 import ru.sirena112.core.domain.Scenario
+import ru.sirena112.core.domain.GroundTruth
+import ru.sirena112.core.domain.SessionMode
+import ru.sirena112.core.domain.SessionState
+import ru.sirena112.core.domain.TrainingSessionRepository
 import ru.sirena112.core.domain.ScenarioCategory
 import ru.sirena112.core.domain.Difficulty
 import ru.sirena112.core.domain.ScenarioRepository
@@ -67,6 +74,7 @@ class ScenarioIntegrity(private val mapper: ObjectMapper, private val catalog: C
 @Service
 class ScenarioWorkflowService(private val workflows: ScenarioWorkflowRepository,
     private val scenarios: ScenarioRepository, private val integrity: ScenarioIntegrity,
+    private val sessions: TrainingSessionRepository, private val classifier: ClassifierService,
     private val access: SessionAccess, private val accounts: AccountRepository,
     private val facade: CardTrainingFacade, private val audit: AuthAuditRepository,
     @Qualifier("aiRestTemplate") private val aiHttp: RestTemplate, private val properties: CoreProperties,
@@ -79,6 +87,52 @@ class ScenarioWorkflowService(private val workflows: ScenarioWorkflowRepository,
     }
 
     fun get(id: UUID): ScenarioWorkflow = visible(id)
+
+    fun studentProposals(): List<ScenarioWorkflow> {
+        val actor = access.current() ?: throw ResponseStatusException(HttpStatus.FORBIDDEN)
+        if (actor.role != Role.STUDENT) throw ResponseStatusException(HttpStatus.FORBIDDEN)
+        return workflows.findAll().filter { it.source == ScenarioSource.STUDENT && it.ownerId == actor.id }
+    }
+
+    fun proposeFromCard(sessionId: UUID): ScenarioWorkflow {
+        val actor = access.current() ?: throw ResponseStatusException(HttpStatus.FORBIDDEN)
+        if (actor.role != Role.STUDENT || actor.groupId == null) throw ResponseStatusException(HttpStatus.FORBIDDEN)
+        access.studentOwns(sessionId)
+        if (workflows.findAll().any { it.sourceSessionId == sessionId })
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Карточка уже предложена")
+        val session = sessions.findById(sessionId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+        if (session.mode != SessionMode.CARD || session.state != SessionState.SCORED || session.cardRevision < 1)
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Предложение возможно только из оценённой карточки")
+        val submitted = session.operatorCard.input
+        val incident = submitted.incident ?: throw IllegalArgumentException("В карточке нет признаков происшествия")
+        // Never copy free text, names, phone numbers, or the entered real-world address into a reusable scenario.
+        val safeInput = OperatorCardInput(
+            incident = IncidentInput(incident.selectedSignIds, incident.answers.map { it.copy(freeText = null) }),
+            address = AddressInput("Учебный адрес без персональных данных"),
+            victims = submitted.victims
+        )
+        val result = classifier.calculate(safeInput)
+        if (result.status != CalculationStatus.RESOLVED ||
+            result.classifierCode != session.scenario.groundTruth.classifierCode ||
+            result.incidentType == null || result.responseScenarioStatus == null)
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Признаки карточки не образуют проверяемый вариант исходного типа происшествия")
+        val id = UUID.randomUUID()
+        val scenario = session.scenario.copy(id = id, version = 1,
+            title = "${result.incidentType} — вариант обучающегося",
+            profile = "Учебный вариант, созданный из обезличенной карточки обучающегося",
+            groundTruth = GroundTruth(result.classifierVersion, result.classifierCode,
+                result.incidentType, result.ekp35IncidentType, result.responseScenarioCode,
+                result.responseScenarioStatus, result.mainServices, result.services, safeInput), caller = null)
+        val validation = integrity.validate(scenario)
+        if (!validation.valid) throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, validation.errors.joinToString("; "))
+        val proposal = ScenarioWorkflow(id, id, 1, 0, ScenarioStatus.DRAFT, scenario,
+            "Предложено из завершённого занятия; проверить перед утверждением", actor.id, actor.groupId,
+            ScenarioSource.STUDENT, sessionId)
+        workflows.insert(proposal)
+        record(actor.id, "SCENARIO_PROPOSED", id)
+        return proposal
+    }
 
     fun create(request: DraftRequest, source: ScenarioSource = ScenarioSource.MANUAL): ScenarioWorkflow {
         val actor = teacher()
@@ -211,3 +265,13 @@ class ScenarioWorkflowController(private val service: ScenarioWorkflowService) {
     @PostMapping("/{id}/assign") @ResponseStatus(HttpStatus.CREATED)
     fun assign(@PathVariable id: UUID, @RequestBody request: AssignScenarioRequest): List<SessionView> = service.assign(id, request)
 }
+
+@RestController
+@RequestMapping("/api/student/scenario-proposals")
+class StudentScenarioProposalController(private val service: ScenarioWorkflowService) {
+    @GetMapping fun list(): List<ScenarioWorkflow> = service.studentProposals()
+    @PostMapping @ResponseStatus(HttpStatus.CREATED)
+    fun propose(@RequestBody request: StudentProposalRequest): ScenarioWorkflow = service.proposeFromCard(request.sessionId)
+}
+
+data class StudentProposalRequest(val sessionId: UUID)
