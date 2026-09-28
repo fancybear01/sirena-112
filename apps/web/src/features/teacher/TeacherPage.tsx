@@ -22,6 +22,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlacehol
 import { teacherApi, teacherSessionEvents } from './api/teacherApi';
 import { TeacherAnalytics } from './TeacherAnalytics';
 import { ScenarioWorkflowPanel } from './ScenarioWorkflowPanel';
+import { TrainingHistoryPanel } from '../history/TrainingHistoryPanel';
 import type {
   ScenarioDifficulty,
   TeacherApi,
@@ -328,6 +329,7 @@ export function TeacherPage({
         </Button>
       </Group>
       {secureAuth && <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />}
+      {secureAuth && <TrainingHistoryPanel role="teacher" />}
 
       <TeacherAnalytics
         summary={analytics}
