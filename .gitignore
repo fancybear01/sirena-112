@@ -45,4 +45,6 @@ recordings/
 logs/
 backups/
 tmp/
+offline-bundle/
+secrets/
 /agent.md

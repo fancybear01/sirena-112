@@ -8,6 +8,7 @@ import {
 import type { OperatorCard, SessionReport } from '../../../api/types';
 import type {
   TeacherApi,
+  TeacherAnalyticsSummary,
   TeacherScenario,
   TeacherServiceAssignment,
   TeacherSession,
@@ -17,6 +18,8 @@ type MockOptions = {
   scenarios?: TeacherScenario[];
   delayMs?: number;
   failScenarios?: boolean;
+  failAnalytics?: boolean;
+  analytics?: TeacherAnalyticsSummary;
   serviceAssignments?: TeacherServiceAssignment[];
   storage?: Storage | null;
 };
@@ -30,6 +33,22 @@ type StoredStudentSnapshot = {
 };
 
 const storedSessionStates = new Set(['ACTIVE', 'COMPLETED', 'SCORING', 'SCORED', 'FAILED']);
+
+const emptyAnalytics: TeacherAnalyticsSummary = {
+  completedSessions: 0,
+  averagePercent: null,
+  medianPercent: null,
+  scoreDistribution: [
+    { label: '0–20', count: 0 },
+    { label: '>20–40', count: 0 },
+    { label: '>40–60', count: 0 },
+    { label: '>60–80', count: 0 },
+    { label: '>80–100', count: 0 },
+  ],
+  incidentTypes: [],
+  topErrors: [],
+  daily: [],
+};
 
 function createEmptyCard(): TeacherSession['card'] {
   return {
@@ -132,6 +151,14 @@ export function createTeacherMockApi(options: MockOptions = {}): TeacherApi {
   }
 
   return {
+    async getAnalytics() {
+      if (options.failAnalytics) {
+        await respond(null);
+        throw new ApiError('Проверьте соединение и повторите попытку.');
+      }
+      return respond(options.analytics ?? emptyAnalytics);
+    },
+
     async getScenarios() {
       if (options.failScenarios) {
         await respond(null);

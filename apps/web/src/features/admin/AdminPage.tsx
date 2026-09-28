@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Group, Paper, PasswordInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { secureAuth, type AuthRole } from '../../api/auth';
+import type { AuthRole } from '../../api/auth';
 import { apiConfig } from '../../api/config';
 import { createHttpClient } from '../../api/httpClient';
-import { WorkspacePage } from '../../shared/WorkspacePage';
 
 type GroupRecord = { id: string; name: string };
 type UserRecord = { id: string; username: string; displayName: string; role: AuthRole;
@@ -30,15 +29,13 @@ export function AdminPage() {
     setGroupId((current) => current ?? groupList[0]?.id ?? null);
   }
 
-  useEffect(() => { if (secureAuth) void refresh().catch(() => setError('Не удалось загрузить пользователей.')); }, []);
+  useEffect(() => { void refresh().catch(() => setError('Не удалось загрузить пользователей.')); }, []);
 
   async function run(action: () => Promise<unknown>) {
     setError('');
     try { await action(); await refresh(); }
     catch { setError('Операция не выполнена. Проверьте данные и права доступа.'); }
   }
-
-  if (!secureAuth) return <WorkspacePage title="Администрирование" />;
 
   return <Stack gap="xl">
     <Title order={1}>Пользователи и группы</Title>

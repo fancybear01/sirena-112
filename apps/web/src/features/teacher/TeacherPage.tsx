@@ -15,14 +15,17 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import { getApiErrorMessage } from '../../api/errors';
-import { secureAuth } from '../../api/auth';
 import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { teacherApi, teacherSessionEvents } from './api/teacherApi';
+import { TeacherAnalytics } from './TeacherAnalytics';
+import { ScenarioWorkflowPanel } from './ScenarioWorkflowPanel';
+import { TrainingHistoryPanel } from '../history/TrainingHistoryPanel';
 import type {
   ScenarioDifficulty,
   TeacherApi,
+  TeacherAnalyticsSummary,
   TeacherLiveConnectionState,
   TeacherScenario,
   TeacherServiceAssignment,
@@ -135,7 +138,19 @@ export function TeacherPage({
   const [isLaunching, setIsLaunching] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [analytics, setAnalytics] = useState<TeacherAnalyticsSummary | null>(null);
+  const [analyticsError, setAnalyticsError] = useState('');
   const timer = useSessionTimer(session);
+
+  const loadAnalytics = useCallback(async () => {
+    setAnalyticsError('');
+    setAnalytics(null);
+    try {
+      setAnalytics(await api.getAnalytics());
+    } catch (error) {
+      setAnalyticsError(getApiErrorMessage(error, 'Не удалось загрузить сводку.'));
+    }
+  }, [api]);
 
   const loadScenarios = useCallback(async () => {
     setListError('');
@@ -163,7 +178,15 @@ export function TeacherPage({
   }, [loadScenarios]);
 
   useEffect(() => {
-    if (secureAuth && api.getStudents) {
+    void loadAnalytics();
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    if (session?.state === 'SCORED' && session.report) void loadAnalytics();
+  }, [loadAnalytics, session?.id, session?.report?.score, session?.state]);
+
+  useEffect(() => {
+    if (api.getStudents) {
       void api.getStudents().then((items) => {
         setStudents(items);
         setStudentId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null);
@@ -258,7 +281,7 @@ export function TeacherPage({
     setOperationError('');
     setIsLaunching(true);
     try {
-      if (secureAuth && !studentId) throw new Error('Выберите студента');
+      if (api.getStudents && !studentId) throw new Error('Выберите студента');
       setSession(await api.launchSession(selectedScenario.id, studentId ?? undefined));
     } catch (error) {
       setOperationError(getApiErrorMessage(error, 'Не удалось запустить занятие. Попробуйте ещё раз.'));
@@ -295,10 +318,23 @@ export function TeacherPage({
 
   return (
     <Stack className="teacher-page" gap="xl">
-      <div>
-        <Title order={1}>Сценарии</Title>
-        <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
-      </div>
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={1}>Сценарии</Title>
+          <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
+        </div>
+        <Button component="a" href="/board" target="_blank" rel="noreferrer" variant="light">
+          Открыть учебное табло
+        </Button>
+      </Group>
+      <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />
+      <TrainingHistoryPanel role="teacher" />
+
+      <TeacherAnalytics
+        summary={analytics}
+        error={analyticsError}
+        onRetry={() => void loadAnalytics()}
+      />
 
       {operationError && (
         <Alert color="red" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setOperationError('')}>
@@ -541,14 +577,14 @@ export function TeacherPage({
                       </Text>
                     </div>
                   </Group>
-                  {secureAuth && <Select mt="xl" label="Студент группы" placeholder="Выберите студента"
+                  {api.getStudents && <Select mt="xl" label="Студент группы" placeholder="Выберите студента"
                     data={students.map((item) => ({ value: item.id, label: `${item.displayName} (${item.username})` }))}
                     value={studentId} onChange={setStudentId} />}
                   <Button
                     fullWidth
                     mt="xl"
                     leftSection={<IconPlayerPlay size={18} />}
-                    disabled={selectedScenario.status !== 'READY' || (secureAuth && !studentId)}
+                    disabled={selectedScenario.status !== 'READY' || Boolean(api.getStudents && !studentId)}
                     loading={isLaunching}
                     onClick={() => void launchSession()}
                   >

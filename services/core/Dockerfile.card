@@ -1,11 +1,11 @@
-FROM eclipse-temurin:17-jdk-jammy AS build
+FROM eclipse-temurin:17-jdk-jammy@sha256:60fcdd4a85c94a23ef86d0d55867c6a8dbc4f7c3efc8286e259956c3ea4ef08c AS build
 
 WORKDIR /app/services/core
 COPY services/core/ ./
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew && ./gradlew bootJar --no-daemon && \
     find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -exec cp {} /app/core.jar \;
 
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:17-jre-jammy@sha256:97137382c6f0c30427d9b7c44ad8b2d55ac823b0768c171d81a643ed219023c5
 RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app/services/core

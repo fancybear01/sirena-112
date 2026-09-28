@@ -37,7 +37,8 @@ class ScenarioPackageImport(
     private val catalog: ClassifierCatalog,
     private val classifier: ClassifierService,
     private val scenarios: ScenarioRepository,
-    @Value("\${core.scenario-import.enabled:false}") private val enabled: Boolean
+    @Value("\${core.scenario-import.enabled:false}") private val enabled: Boolean,
+    @Value("\${core.auth.enabled:false}") private val authEnabled: Boolean
 ) {
     private val schema by lazy {
         val node = mapper.readTree(catalog.contractsDir().resolve("scenario.schema.json").toFile())
@@ -71,7 +72,7 @@ class ScenarioPackageImport(
     }
 
     private fun requireLocalImport(request: HttpServletRequest) {
-        if (!enabled || request.remoteAddr !in setOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")) {
+        if (authEnabled || !enabled || request.remoteAddr !in setOf("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")) {
             throw org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Импорт доступен только локально при явном включении")
         }
     }

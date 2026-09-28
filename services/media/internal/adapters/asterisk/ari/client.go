@@ -68,7 +68,8 @@ type callRuntime struct {
 	bridgeID        string
 	externalMediaID string
 	channelID       string
-	bridged         bool
+	externalBridged bool
+	sipBridged      bool
 }
 
 // Config wires ARI client dependencies.
@@ -137,7 +138,7 @@ func (c *Client) StartCall(ctx context.Context, req ports.StartCallRequest) (res
 		return result, err
 	}
 	rt := &callRuntime{callID: req.CallID, sessionID: req.SessionID, aiSessionID: req.AISessionID,
-		echo: echo, port: port, channelID: req.CallID, bridgeID: req.CallID + "-bridge", externalMediaID: req.CallID + "-media",
+		echo: echo, port: port, channelID: req.CallID, bridgeID: req.CallID + "-bridge", externalMediaID: "media-" + req.CallID,
 		ready: make(chan struct{}), done: make(chan struct{}), overflow: make(chan struct{}), events: make(chan ports.ARIEvent, 64)}
 	res := ports.CallResources{ChannelID: rt.channelID, BridgeID: rt.bridgeID, ExternalMediaID: rt.externalMediaID}
 	// Publish IDs before ARI can send events, but gate this call's worker on ready.
@@ -183,12 +184,11 @@ func (c *Client) StartCall(ctx context.Context, req ports.StartCallRequest) (res
 		return result, err
 	}
 	extHost := net.JoinHostPort(c.rtpPublicHost, strconv.Itoa(port))
-	if _, err := c.createExternalMedia(ctx, extHost, res.ExternalMediaID); err != nil {
+	actualExternalMediaID, err := c.createExternalMedia(ctx, extHost, res.ExternalMediaID)
+	if err != nil {
 		return result, err
 	}
-	if err := c.addToBridge(ctx, res.BridgeID, res.ExternalMediaID); err != nil {
-		return result, err
-	}
+	c.log.Info("ari external media created", "callId", req.CallID, "requestedChannelId", res.ExternalMediaID, "channelId", actualExternalMediaID)
 	endpoint := req.SIPAddress
 	if !strings.Contains(endpoint, "/") {
 		endpoint = "PJSIP/" + endpoint
@@ -625,19 +625,32 @@ func (c *Client) runEvents(rt *callRuntime) {
 				return
 			}
 			if evt.Type == "StasisStart" {
-				if evt.ChannelID == rt.externalMediaID || rt.bridged {
+				isExternal := evt.ChannelID == rt.externalMediaID
+				if (isExternal && rt.externalBridged) || (!isExternal && rt.sipBridged) {
 					rt.mu.Unlock()
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				err := c.addToBridge(ctx, rt.bridgeID, rt.channelID)
+				channelID := rt.channelID
+				if isExternal {
+					channelID = rt.externalMediaID
+				}
+				err := c.addToBridge(ctx, rt.bridgeID, channelID)
 				cancel()
-				rt.bridged = err == nil
+				if isExternal {
+					rt.externalBridged = err == nil
+				} else {
+					rt.sipBridged = err == nil
+				}
+				if isExternal && err == nil {
+					rt.mu.Unlock()
+					continue
+				}
 				evt.Type, evt.State = "ChannelStateChange", "Up"
 				if err != nil {
-					c.log.Error("add sip channel to bridge failed", "callId", rt.callID, "err", err)
+					c.log.Error("add channel to bridge failed", "callId", rt.callID, "channelId", channelID, "err", err)
 					evt.Type, evt.State = "media.error", "Failed"
-					evt.Payload = map[string]any{"message": "could not activate call media"}
+					evt.Payload = map[string]any{"message": "could not add channel to call bridge"}
 				}
 			}
 			var voice ports.VoiceSession
