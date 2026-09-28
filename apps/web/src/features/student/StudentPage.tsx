@@ -41,6 +41,7 @@ import { apiConfig } from '../../api/config';
 import { createHttpClient } from '../../api/httpClient';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { studentApi } from './api/studentApi';
+import { TrainingHistoryPanel } from '../history/TrainingHistoryPanel';
 import type {
   StudentApi,
   StudentAssignment,
@@ -609,7 +610,10 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   }
 
   if (loadError) {
-    return <ErrorState title="Не удалось получить задание" description={loadError} onRetry={() => void loadAssignment()} />;
+    return <Stack gap="md">
+      {secureAuth && <TrainingHistoryPanel role="student" />}
+      <ErrorState title="Не удалось получить задание" description={loadError} onRetry={() => void loadAssignment()} />
+    </Stack>;
   }
 
   if (!assignment || !input || !cardForm) {
@@ -623,6 +627,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
   return (
     <Stack className="student-page" gap="md">
+      {secureAuth && <TrainingHistoryPanel role="student" />}
       <Paper className="assignment-brief" withBorder radius="sm" p="md">
         <div className="assignment-brief__main">
           <Text className="page-eyebrow">Учебная сессия · классификатор {cardForm.classifierVersion}</Text>
