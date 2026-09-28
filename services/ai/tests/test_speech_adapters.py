@@ -103,6 +103,24 @@ def test_piper_leaves_audio_alone_when_rates_already_match():
     assert len(audio) // 2 == 16000
 
 
+class Piper12Voice:
+    """API закреплённого MIT-релиза Piper 1.2.0."""
+
+    rate = 16000
+
+    def synthesize(self, text: str, writer) -> None:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(self.rate)
+        writer.writeframes(tone(self.rate, self.rate))
+
+
+def test_piper_12_synthesize_api_is_supported():
+    audio = piper_with(Piper12Voice()).synthesize("реплика", 16000)
+
+    assert len(audio) // 2 == 16000
+
+
 class CountingVoice(FakeVoice):
     """Голос, который замечает, что в него вошли вдвоём."""
 

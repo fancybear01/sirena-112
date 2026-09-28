@@ -13,4 +13,11 @@
 .env.*
 !.env.example
 *.log
+models
+offline-bundle
+data
+recordings
+logs
+backups
+tmp
 

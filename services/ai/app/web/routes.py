@@ -8,7 +8,7 @@
 полей разрешён конкретный тип, но не null.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
 from app.config import SERVICE_NAME, SERVICE_VERSION, settings
 from app.engines import card_text, catalog_scenarios, group_advice, rule_dialogue, rule_scoring
@@ -43,9 +43,22 @@ ai_router = APIRouter(prefix="/ai", tags=["ai"])
 
 @health_router.get("/health", response_model=HealthResponse, summary="Проверка живости")
 def health() -> HealthResponse:
+    return _health_response("ok")
+
+
+@health_router.get("/ready", response_model=HealthResponse, summary="Проверка готовности")
+def ready(response: Response) -> HealthResponse:
+    pipeline = get_pipeline()
+    if settings.require_real_speech and (not pipeline.available or pipeline.simulated):
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return _health_response("not_ready")
+    return _health_response("ready")
+
+
+def _health_response(current_status: str) -> HealthResponse:
     pipeline = get_pipeline()
     return HealthResponse(
-        status="ok",
+        status=current_status,
         service=SERVICE_NAME,
         version=SERVICE_VERSION,
         engine=settings.engine,

@@ -10,17 +10,22 @@ description = "Sirena-112 AI service: сценарии, поведение аб�
 # на 3.9 окружение уже не собирается.
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.110",
-    "pydantic>=2.6",
-    "uvicorn[standard]>=0.27",
+    "fastapi==0.141.1",
+    "pydantic==2.13.5",
+    "uvicorn[standard]==0.54.0",
     # Морфология русского языка для разбора текста карточки. Лицензия MIT
     # и у кода, и у словаря, поэтому пригодна для поставки заказчику.
     # Словарь локальный, пятнадцать мегабайт, сеть при работе не нужна.
     # Без неё сервис работает, но честно пишет, что грамотность не проверял.
-    "pymorphy3>=2.0",
+    "pymorphy3==2.0.6",
 ]
 
 [project.optional-dependencies]
+voice = [
+    # 1.2.0 is the last MIT release. Newer piper-tts releases use GPL-3.0.
+    "piper-tts==1.2.0",
+    "vosk==0.3.45",
+]
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",

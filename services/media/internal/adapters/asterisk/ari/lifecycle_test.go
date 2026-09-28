@@ -30,7 +30,7 @@ func (f trackedFactory) Create(string, int) (ports.EchoSession, int, error) {
 }
 
 func TestStartRollbackAfterCancellation(t *testing.T) {
-	for _, stage := range []string{"/ari/bridges", "/ari/channels/externalMedia", "/ari/bridges/call-bridge/addChannel", "/ari/channels"} {
+	for _, stage := range []string{"/ari/bridges", "/ari/channels/externalMedia", "/ari/channels"} {
 		t.Run(stage, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -67,7 +67,7 @@ func TestStartRollbackAfterCancellation(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			for _, path := range []string{"/ari/channels/call", "/ari/channels/call-media", "/ari/bridges/call-bridge"} {
+			for _, path := range []string{"/ari/channels/call", "/ari/channels/media-call", "/ari/bridges/call-bridge"} {
 				if !deleted[path] {
 					t.Errorf("missing rollback %s", path)
 				}
@@ -79,11 +79,19 @@ func TestStartRollbackAfterCancellation(t *testing.T) {
 func TestEarlyStasisAndExternalMediaFailure(t *testing.T) {
 	var c *Client
 	earlyDone := make(chan struct{})
+	var mu sync.Mutex
+	var addedChannels []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("channelId")
 		switch r.URL.Path {
 		case "/ari/bridges":
 			id = r.URL.Query().Get("bridgeId")
+		case "/ari/channels/externalMedia":
+			c.handleWSMessage(context.Background(), []byte(`{"type":"StasisStart","channel":{"id":"media-call"}}`))
+		case "/ari/bridges/call-bridge/addChannel":
+			mu.Lock()
+			addedChannels = append(addedChannels, r.URL.Query().Get("channel"))
+			mu.Unlock()
 		case "/ari/channels":
 			if id != "call" {
 				t.Errorf("originate ID=%q", id)
@@ -114,12 +122,17 @@ func TestEarlyStasisAndExternalMediaFailure(t *testing.T) {
 	if evt.CallID != "call" || evt.State != "Up" {
 		t.Fatalf("event=%+v", evt)
 	}
-	c.handleWSMessage(context.Background(), []byte(`{"type":"ChannelStateChange","channel":{"id":"call-media","state":"Up"}}`))
+	mu.Lock()
+	if got := strings.Join(addedChannels, ","); got != "media-call,call" {
+		t.Fatalf("channels added before Stasis or in wrong order: %q", got)
+	}
+	mu.Unlock()
+	c.handleWSMessage(context.Background(), []byte(`{"type":"ChannelStateChange","channel":{"id":"media-call","state":"Up"}}`))
 	c.handleWSMessage(context.Background(), []byte(`{"type":"StasisStart","channel":{"id":"call"}}`))
 	if len(events) != 0 {
 		t.Fatal("duplicate/early Up published")
 	}
-	c.handleWSMessage(context.Background(), []byte(`{"type":"StasisEnd","channel":{"id":"call-media"}}`))
+	c.handleWSMessage(context.Background(), []byte(`{"type":"StasisEnd","channel":{"id":"media-call"}}`))
 	evt = <-events
 	if evt.CallID != "call" || evt.State != "Failed" {
 		t.Fatalf("external media loss ignored: %+v", evt)
