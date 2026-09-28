@@ -4,6 +4,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
+# libvosk.so слинкована с libatomic, а в slim-образе её нет. Без этой строки
+# образ поднимается и отвечает на /health, но распознавание молча мертво:
+# speechAvailable отдаёт false, речь превращается в ошибку speech.unavailable.
+# Проверено на живой речи, других недостающих библиотек нет.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY services/ai/ /app/services/ai/
 COPY contracts/ /app/contracts/
 RUN python -m pip install --no-cache-dir --disable-pip-version-check \
