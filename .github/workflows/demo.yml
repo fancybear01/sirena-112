@@ -38,13 +38,25 @@ jobs:
     name: core / postgres-recovery
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Речевые модели весят полтораста мегабайт и в репозитории не лежат,
+      # поэтому в CI их нет. По умолчанию AI требует настоящую речь и без
+      # моделей отдаёт 503 на /ready, из-за чего контейнер становится
+      # unhealthy, а Core от него зависит - и шаг падал целиком, хотя
+      # проверяется здесь восстановление PostgreSQL, а не голос.
+      # Строгую проверку оставляем демо-стенду, где модели есть.
+      AI_REQUIRE_REAL_SPEECH: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Build Core with PostgreSQL
         run: CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
       - name: Run card smoke scenario against PostgreSQL
-        run: python scripts/smoke_card_1050602.py --core http://127.0.0.1:8080 --expect-fallback
+        # Ожидание изменилось вместе со стеком. Раньше в compose.yaml сервиса
+        # AI не было вовсе, Core считал сам, и проверялся именно откат на
+        # четыре критерия. После #128 AI в полном стеке есть, значит проверять
+        # надо обратное: что Core с ним разговаривает и отчёт полный.
+        run: python scripts/smoke_card_1050602.py --core http://127.0.0.1:8080 --expect-ai
       - name: Import a validated scenario through local Core API
         run: python scripts/smoke_import_postgres.py
       - name: Restart Core and check persisted records
