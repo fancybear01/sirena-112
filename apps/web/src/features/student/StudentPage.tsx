@@ -36,6 +36,9 @@ import type {
   ServiceStatus,
 } from '../../api/types';
 import { getApiErrorMessage } from '../../api/errors';
+import { secureAuth } from '../../api/auth';
+import { apiConfig } from '../../api/config';
+import { createHttpClient } from '../../api/httpClient';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { studentApi } from './api/studentApi';
 import type {
@@ -401,6 +404,8 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serviceAssignments, setServiceAssignments] = useState<ServiceAssignment[]>([]);
   const [serviceAssignmentsError, setServiceAssignmentsError] = useState('');
+  const [proposalStatus, setProposalStatus] = useState('');
+  const [proposalBusy, setProposalBusy] = useState(false);
   const revisionRef = useRef(0);
   const changeIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -935,7 +940,22 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
         </Paper>
         {report && (
-          <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
+          <>
+            <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
+            {secureAuth && <Paper withBorder radius="lg" p="md">
+              <Text fw={600}>Предложить учебный вариант</Text>
+              <Text size="sm" c="dimmed">Core перенесёт только признаки и варианты ответов из оценённой карточки. ФИО, телефон, адрес и свободный текст не попадут в сценарий. Преподаватель проверит его перед назначением.</Text>
+              {proposalStatus && <Text size="sm" role="status" mt="sm">{proposalStatus}</Text>}
+              <Button mt="sm" variant="light" loading={proposalBusy} onClick={() => {
+                setProposalBusy(true); setProposalStatus('');
+                void createHttpClient(apiConfig.baseUrl).request('/api/student/scenario-proposals', {
+                  method: 'POST', body: { sessionId: assignment.session.id },
+                }).then(() => setProposalStatus('Предложение отправлено преподавателю на проверку.'))
+                  .catch((cause) => setProposalStatus(getApiErrorMessage(cause, 'Не удалось предложить карточку.')))
+                  .finally(() => setProposalBusy(false));
+              }}>Предложить преподавателю</Button>
+            </Paper>}
+          </>
         )}
       </>
       <DispatchStrip

@@ -91,10 +91,12 @@ class CardTrainingFacade(
     private val serviceAssignments: ru.sirena112.core.dispatch.ServiceAssignmentService,
     private val aiClient: ru.sirena112.core.integration.AiClient,
     private val reportRepository: SessionReportRepository,
-    private val access: ru.sirena112.core.auth.SessionAccess
+    private val access: ru.sirena112.core.auth.SessionAccess,
+    private val workflows: ScenarioWorkflowRepository
 ) {
 
-    fun scenarios(): List<Scenario> = scenarioRepository.findAll().sortedBy { it.groundTruth.classifierCode }
+    fun scenarios(): List<Scenario> = scenarioRepository.findAll().filter { mayUse(it.id) }
+        .sortedBy { it.groundTruth.classifierCode }
 
     fun assignments(): List<StudentAssignmentResponse> = sessionRepository.findAll()
         .asSequence()
@@ -119,6 +121,8 @@ class CardTrainingFacade(
     fun createSession(request: CreateCardSessionRequest): SessionView {
         val scenario = scenarioRepository.findById(request.scenarioId ?: DEFAULT_SCENARIO_ID)
             ?: throw NoSuchElementException("Сценарий ${request.scenarioId} не найден")
+        if (!mayUse(scenario.id)) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.FORBIDDEN, "Сценарий недоступен этой группе")
         val (studentId, teacherId, groupId) = access.assignment(request.studentId)
         return sessionService.create(scenario, request.mode, studentId = studentId,
             teacherId = teacherId, groupId = groupId).toView()
@@ -339,6 +343,14 @@ class CardTrainingFacade(
 
     private fun requireSession(sessionId: UUID): TrainingSession = sessionRepository.findById(sessionId)
         ?: throw NoSuchElementException("Учебная сессия $sessionId не найдена")
+
+    private fun mayUse(scenarioId: UUID): Boolean {
+        val item = workflows.findById(scenarioId) ?: return true // legacy catalog fixtures
+        if (item.status != ScenarioStatus.APPROVED) return false
+        val actor = access.current() ?: return true
+        return actor.role == ru.sirena112.core.auth.Role.ADMIN ||
+            actor.role == ru.sirena112.core.auth.Role.TEACHER && actor.groupId != null && actor.groupId == item.groupId
+    }
 
     private fun requireCardSession(sessionId: UUID): TrainingSession = requireSession(sessionId).also {
         if (it.mode != SessionMode.CARD) throw IllegalStateException("Карточная операция недоступна для голосовой сессии")

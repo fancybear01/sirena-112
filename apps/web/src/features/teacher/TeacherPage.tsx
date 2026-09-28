@@ -21,6 +21,7 @@ import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { teacherApi, teacherSessionEvents } from './api/teacherApi';
 import { TeacherAnalytics } from './TeacherAnalytics';
+import { ScenarioWorkflowPanel } from './ScenarioWorkflowPanel';
 import type {
   ScenarioDifficulty,
   TeacherApi,
@@ -321,6 +322,7 @@ export function TeacherPage({
         <Title order={1}>Сценарии</Title>
         <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
       </div>
+      {secureAuth && <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />}
 
       <TeacherAnalytics
         summary={analytics}
