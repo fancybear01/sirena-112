@@ -14,27 +14,38 @@ export type HttpClient = {
   request<T>(path: string, options?: RequestOptions): Promise<T>;
 };
 
+export const authUnauthorizedEvent = 'sirena-112:auth-unauthorized';
+
+function notifyUnauthorized(status: number) {
+  if (status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(authUnauthorizedEvent));
+  }
+}
+
 function isErrorPayload(value: unknown): value is ErrorPayload {
   return Boolean(value && typeof value === 'object');
 }
 
-export function createHttpClient(baseUrl: string, fetchImpl: typeof fetch = fetch): HttpClient {
+export function createHttpClient(baseUrl: string, fetchImpl?: typeof fetch): HttpClient {
   return {
     async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+      const executeFetch = fetchImpl ?? globalThis.fetch;
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-      if (import.meta.env.VITE_AUTH_MODE === 'secure' &&
-          options.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method.toUpperCase())) {
-        const csrfResponse = await fetchImpl(`${baseUrl}/api/auth/csrf`, { credentials: 'include' });
-        if (!csrfResponse.ok) throw new ApiError('Не удалось получить защитный токен.', { status: csrfResponse.status });
+      if (options.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method.toUpperCase())) {
+        const csrfResponse = await executeFetch(`${baseUrl}/api/auth/csrf`, { credentials: 'include' });
+        if (!csrfResponse.ok) {
+          notifyUnauthorized(csrfResponse.status);
+          throw new ApiError('Не удалось получить защитный токен.', { status: csrfResponse.status });
+        }
         const csrf = await csrfResponse.json() as { token: string; headerName: string };
         headers.set(csrf.headerName, csrf.token);
       }
 
       let response: Response;
       try {
-        response = await fetchImpl(`${baseUrl}${path}`, {
+        response = await executeFetch(`${baseUrl}${path}`, {
           ...options,
           credentials: 'include',
           headers,
@@ -50,6 +61,7 @@ export function createHttpClient(baseUrl: string, fetchImpl: typeof fetch = fetc
         : await response.text().catch(() => '');
 
       if (!response.ok) {
+        notifyUnauthorized(response.status);
         const errorPayload = isErrorPayload(payload) ? payload : undefined;
         throw new ApiError(
           typeof errorPayload?.message === 'string'

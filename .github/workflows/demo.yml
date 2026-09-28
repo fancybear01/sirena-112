@@ -50,7 +50,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Build Core with PostgreSQL
-        run: CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
+        run: AI_REQUIRE_REAL_SPEECH=false CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
       - name: Run card smoke scenario against PostgreSQL
         # Ожидание изменилось вместе со стеком. Раньше в compose.yaml сервиса
         # AI не было вовсе, Core считал сам, и проверялся именно откат на
