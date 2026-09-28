@@ -78,3 +78,17 @@ func TestVoiceModeValidation(t *testing.T) {
 		t.Fatal("unknown mode accepted")
 	}
 }
+
+func TestRecordingRequiresIsolatedAuthenticatedCore(t *testing.T) {
+	t.Setenv("ARI_USERNAME", "media")
+	t.Setenv("ARI_PASSWORD", "secret")
+	t.Setenv("MEDIA_MODE", "ai")
+	t.Setenv("MEDIA_RECORDINGS_DIR", t.TempDir())
+	t.Setenv("AI_BASE_URL", "ws://127.0.0.1:8090")
+	if _, err := config.Load(); err == nil { t.Fatal("recording accepted without Core") }
+	t.Setenv("CORE_BASE_URL", "http://127.0.0.1:8080")
+	t.Setenv("CORE_MEDIA_SERVICE_TOKEN", "0123456789abcdef0123456789abcdef")
+	if _, err := config.Load(); err == nil { t.Fatal("recording accepted without group auth") }
+	t.Setenv("CORE_AUTH_ENABLED", "true")
+	if _, err := config.Load(); err != nil { t.Fatal(err) }
+}

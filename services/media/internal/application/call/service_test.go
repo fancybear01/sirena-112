@@ -40,6 +40,56 @@ type fakeCore struct {
 	events []domain.Event
 }
 
+type recordingAsterisk struct {
+	fakeAsterisk
+	last ports.StartCallRequest
+	fail bool
+}
+
+func (a *recordingAsterisk) StartCall(ctx context.Context, req ports.StartCallRequest) (ports.CallResources, error) {
+	a.last = req
+	return a.fakeAsterisk.StartCall(ctx, req)
+}
+func (a *recordingAsterisk) TakeRecording(callID string) (*ports.RecordingInfo, error) {
+	if a.fail {
+		return nil, errors.New("disk unavailable")
+	}
+	return &ports.RecordingInfo{SessionID: a.last.SessionID, CallID: callID, DurationMS: 120, Bytes: 1964}, nil
+}
+
+func TestRecordingAfterTranscriptBeforeEndedAndStorageFailure(t *testing.T) {
+	a := &recordingAsterisk{}
+	core := &fakeCore{}
+	svc := call.NewService(a, core, slog.Default())
+	for i := 0; i < 2; i++ {
+		a.fail = i == 1
+		c, err := svc.Start(context.Background(), call.StartCommand{SessionID: "session", AISessionID: "ai", SIPAddress: "1001"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "ChannelStateChange", State: "Up"})
+		svc.HandleARIEvent(ports.ARIEvent{CallID: c.ID, Type: "transcript.final", Payload: map[string]any{"text": "hello", "sequence": 1}})
+		if _, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: c.ID}); err != nil {
+			t.Fatal(err)
+		}
+		var order []string
+		for _, e := range core.events {
+			if e.Payload["callId"] == c.ID {
+				order = append(order, e.Type)
+			}
+		}
+		if i == 0 {
+			if len(order) < 5 || order[len(order)-3] != "transcript.final" || order[len(order)-2] != "recording.ready" || order[len(order)-1] != "call.ended" {
+				t.Fatalf("wrong order: %v", order)
+			}
+		} else {
+			if len(order) < 5 || order[len(order)-2] != "media.error" || order[len(order)-1] != "call.ended" {
+				t.Fatalf("storage failure: %v", order)
+			}
+		}
+	}
+}
+
 func (f *fakeCore) Publish(ctx context.Context, event domain.Event) error {
 	f.events = append(f.events, event)
 	return nil

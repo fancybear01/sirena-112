@@ -18,6 +18,12 @@ services:
       retries: 10
     restart: unless-stopped
 
+  recordings-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "chown 65534:65534 /recordings && chmod 700 /recordings"]
+    volumes:
+      - voice-recordings:/recordings
+
   core:
     build:
       context: .
@@ -37,12 +43,17 @@ services:
       CORE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-sirena112-local}
       CORE_MEDIA_BASE_URL: http://media:8091
       CORE_MEDIA_MODE: ${CORE_MEDIA_MODE:-http}
+      CORE_RECORDINGS_DIR: /recordings
       CORE_AI_BASE_URL: ${CORE_AI_BASE_URL:-http://host.docker.internal:8090}
     ports:
       - "127.0.0.1:${CORE_PORT:-8080}:8080"
+    volumes:
+      - voice-recordings:/recordings:ro
     depends_on:
       postgres:
         condition: service_healthy
+      recordings-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/ready"]
       interval: 5s
@@ -85,6 +96,7 @@ services:
       MEDIA_MODE: ${MEDIA_MODE:-echo}
       AI_BASE_URL: ${MEDIA_AI_BASE_URL:-ws://host.docker.internal:8090}
       CORE_MEDIA_SERVICE_TOKEN: ${CORE_MEDIA_SERVICE_TOKEN:-}
+      CORE_AUTH_ENABLED: ${CORE_AUTH_ENABLED:-false}
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-}
       ARI_BASE_URL: http://asterisk:8088/ari
       ARI_USERNAME: ${ASTERISK_ARI_USER:-media}
@@ -96,12 +108,20 @@ services:
       RTP_PUBLIC_HOST: media
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORE_BASE_URL: ${MEDIA_CORE_BASE_URL:-}
+      MEDIA_RECORDINGS_DIR: ${MEDIA_RECORDINGS_DIR:-}
+      MEDIA_RECORDING_MAX_SECONDS: ${MEDIA_RECORDING_MAX_SECONDS:-900}
+      MEDIA_RECORDING_RETENTION_HOURS: ${MEDIA_RECORDING_RETENTION_HOURS:-168}
     ports:
       - "127.0.0.1:${MEDIA_PORT:-8091}:8091"
+    volumes:
+      - voice-recordings:/recordings
     depends_on:
       asterisk:
         condition: service_healthy
+      recordings-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
   postgres-data:
+  voice-recordings:

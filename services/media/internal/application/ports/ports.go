@@ -79,3 +79,19 @@ type VoiceSession interface {
 type CallController interface {
 	Control(context.Context, string, string) error
 }
+
+type RecordingInfo struct {
+	SessionID  string
+	CallID     string
+	DurationMS int64
+	Bytes      int64
+}
+
+// Optional interface for call controllers that finalize a per-call recording.
+type RecordingSource interface {
+	TakeRecording(callID string) (*RecordingInfo, error)
+}
+
+type RecordingSession interface {
+	Recording() (*RecordingInfo, error)
+}

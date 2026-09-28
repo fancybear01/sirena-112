@@ -331,6 +331,30 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/SessionEvent" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/review:
+    get:
+      summary: Запись и транскрипт завершённого учебного звонка
+      description: Требует авторизации преподавателя своей группы или администратора.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: Данные разбора
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceReview" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/teacher/sessions/{sessionId}/recording:
+    get:
+      summary: Скачать запись учебного звонка
+      description: Только завершённая VOICE-сессия; доступ проверяется по группе.
+      parameters: [{ $ref: "#/components/parameters/SessionId" }]
+      responses:
+        "200":
+          description: WAV PCM16 stereo 8 kHz
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
   /internal/v1/media/events:
     post:
       summary: Приём события от Media Gateway
@@ -458,6 +482,22 @@ components:
         timestamp: { type: string, format: date-time }
         source: { type: string, enum: [core, media, ai, any] }
         payload: { type: object, additionalProperties: true }
+    VoiceReview:
+      type: object
+      required: [sessionId, callId, durationMs, bytes, format, recordingUrl, transcript, events]
+      properties:
+        sessionId: { type: string, format: uuid }
+        callId: { type: string, format: uuid }
+        durationMs: { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+        format: { type: string, enum: [wav] }
+        recordingUrl: { type: string }
+        transcript:
+          type: array
+          items: { $ref: "#/components/schemas/SessionEvent" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/SessionEvent" }
     MediaEventReceipt:
       type: object
       additionalProperties: false

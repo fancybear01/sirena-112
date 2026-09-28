@@ -14,12 +14,15 @@ import (
 
 	aiadapter "github.com/fancybear01/sirena-112/services/media/internal/adapters/ai"
 	"github.com/fancybear01/sirena-112/services/media/internal/adapters/audio"
+	"github.com/fancybear01/sirena-112/services/media/internal/adapters/recording"
 	"github.com/fancybear01/sirena-112/services/media/internal/application/ports"
 )
 
 type AIFactory struct {
-	URL string
-	Log *slog.Logger
+	URL          string
+	Log          *slog.Logger
+	RecordingDir string
+	MaxRecording time.Duration
 }
 
 func (f *AIFactory) Create(host string, port int) (ports.EchoSession, int, error) {
@@ -31,7 +34,7 @@ func (f *AIFactory) Create(host string, port int) (ports.EchoSession, int, error
 	if err != nil {
 		return nil, 0, err
 	}
-	s := &AISession{conn: conn, url: f.URL, log: f.Log, up: audio.NewResampler(), down: audio.NewResampler(), output: make(chan []byte, 500)}
+	s := &AISession{conn: conn, url: f.URL, log: f.Log, recordingDir: f.RecordingDir, maxRecording: f.MaxRecording, up: audio.NewResampler(), down: audio.NewResampler(), output: make(chan []byte, 500)}
 	return s, conn.LocalAddr().(*net.UDPAddr).Port, nil
 }
 
@@ -39,6 +42,16 @@ type AISession struct {
 	conn              *net.UDPConn
 	url               string
 	log               *slog.Logger
+	recordingDir      string
+	maxRecording      time.Duration
+	recorder          *recording.Recorder
+	recordingInfo     *recording.Info
+	recordingErr      error
+	recordInput       []byte
+	recordingMS       int64
+	turnStartMS       int64
+	turnEndMS         int64
+	turnRecorded      bool
 	mu                sync.Mutex
 	inputMu           sync.Mutex
 	ctx               context.Context
@@ -87,8 +100,22 @@ func (s *AISession) Activate(req ports.StartCallRequest, emit func(ports.ARIEven
 		return nil
 	}
 	s.req, s.emit, s.activated = req, emit, true
-	ctx := s.ctx
+	ctx, dir, maxRecording := s.ctx, s.recordingDir, s.maxRecording
 	s.mu.Unlock()
+	if dir != "" {
+		recorder, err := recording.New(dir, req.SessionID, req.CallID, maxRecording)
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		if s.stopped {
+			s.mu.Unlock()
+			_, _ = recorder.Stop()
+			return errors.New("call ended during recording setup")
+		}
+		s.recorder = recorder
+		s.mu.Unlock()
+	}
 	// Handshake may be slow; the UDP reader must remain free to drain packets.
 	ws, err := aiadapter.Dial(ctx, aiadapter.Config{BaseURL: s.url}, req.SessionID, req.AISessionID, s.onAudio, s.onEvent, s.fail)
 	if err != nil {
@@ -126,12 +153,30 @@ func (s *AISession) Stop(ctx context.Context) error {
 		}
 		s.conn.Close()
 		s.wg.Wait()
+		if s.recorder != nil {
+			info, err := s.recorder.Stop()
+			s.mu.Lock()
+			s.recordingErr = err
+			if err == nil {
+				s.recordingInfo = &info
+			}
+			s.mu.Unlock()
+		}
 		stats := s.Stats()
 		s.log.Info("AI media stopped", "callId", s.req.CallID, "sessionId", s.req.SessionID, "aiSessionId", s.req.AISessionID, "rxPackets", stats.ReceivedPackets, "txPackets", stats.SentPackets)
 	})
 	return nil
 }
 func (s *AISession) Stats() ports.RTPStats { s.mu.Lock(); defer s.mu.Unlock(); return s.stats }
+func (s *AISession) Recording() (*ports.RecordingInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recordingInfo == nil {
+		return nil, s.recordingErr
+	}
+	i := s.recordingInfo
+	return &ports.RecordingInfo{SessionID: i.SessionID, CallID: i.CallID, DurationMS: i.DurationMS, Bytes: i.Bytes}, s.recordingErr
+}
 func (s *AISession) Control(typ string) error {
 	s.inputMu.Lock()
 	defer s.inputMu.Unlock()
@@ -159,6 +204,9 @@ func (s *AISession) Control(typ string) error {
 		}
 		if err := s.ws.Control(typ); err != nil {
 			return err
+		}
+		if s.turnRecorded && s.recordingMS > s.turnEndMS {
+			s.turnEndMS = s.recordingMS
 		}
 		s.inputFrames = 0
 		s.waiting = true
@@ -275,6 +323,15 @@ func (s *AISession) onEvent(e map[string]any) error {
 			}
 		}
 		payload["finality"] = true
+		if s.recorder != nil {
+			s.mu.Lock()
+			if s.turnRecorded {
+				payload["recordingStartedAtMs"] = s.turnStartMS
+				payload["recordingEndedAtMs"] = s.turnEndMS
+				s.turnRecorded = false
+			}
+			s.mu.Unlock()
+		}
 		emit(ports.ARIEvent{CallID: req.CallID, Type: typ, Payload: payload})
 	}
 	return nil
@@ -321,10 +378,26 @@ func (s *AISession) read() {
 			}
 		}
 		last, source, have = p.SequenceNumber, p.SSRC, true
+		if s.recorder != nil && !s.stopped {
+			s.recordInput = append(s.recordInput, p.Payload...)
+			if len(s.recordInput) > 160*100 {
+				s.mu.Unlock()
+				s.inputMu.Unlock()
+				s.fail(recording.ErrFull)
+				return
+			}
+		}
 		if s.ws == nil || s.waiting || s.stopped {
 			s.mu.Unlock()
 			s.inputMu.Unlock()
 			continue
+		}
+		if s.recorder != nil {
+			if !s.turnRecorded {
+				s.turnStartMS = s.recordingMS
+				s.turnRecorded = true
+			}
+			s.turnEndMS = s.recordingMS + 20
 		}
 		s.input = append(s.input, s.up.UpULAW(p.Payload)...)
 		var sendErr error
@@ -359,12 +432,26 @@ func (s *AISession) play() {
 		case <-ticker.C:
 			ts += 160 // RTP sampling clock also advances during silence between turns.
 			s.mu.Lock()
+			var inputFrame []byte
+			if len(s.recordInput) >= 160 {
+				inputFrame = s.recordInput[:160]
+				s.recordInput = s.recordInput[160:]
+			}
+			var outputFrame []byte
 			if s.peer == nil || s.stopped {
+				if s.recorder != nil && !s.stopped {
+					if err := s.recordTick(inputFrame, nil); err != nil {
+						s.mu.Unlock()
+						s.fail(err)
+						return
+					}
+				}
 				s.mu.Unlock()
 				continue
 			}
 			select {
 			case payload := <-s.output:
+				outputFrame = payload
 				raw := Marshal(seq, ts, ssrc, 0, false, payload)
 				seq++
 				_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Millisecond))
@@ -381,6 +468,13 @@ func (s *AISession) play() {
 				if endCall {
 					s.hangupAfterAudio = false
 				}
+				if s.recorder != nil {
+					if err := s.recordTick(inputFrame, outputFrame); err != nil {
+						s.mu.Unlock()
+						s.fail(err)
+						return
+					}
+				}
 				s.mu.Unlock()
 				if err != nil {
 					s.fail(errors.New("RTP playback write failed"))
@@ -391,8 +485,24 @@ func (s *AISession) play() {
 					return
 				}
 			default:
+				if s.recorder != nil {
+					if err := s.recordTick(inputFrame, nil); err != nil {
+						s.mu.Unlock()
+						s.fail(err)
+						return
+					}
+				}
 				s.mu.Unlock()
 			}
 		}
 	}
+}
+
+// Called with s.mu held by the 20 ms playback clock.
+func (s *AISession) recordTick(in, out []byte) error {
+	if err := s.recorder.Frame(in, out); err != nil {
+		return err
+	}
+	s.recordingMS += 20
+	return nil
 }

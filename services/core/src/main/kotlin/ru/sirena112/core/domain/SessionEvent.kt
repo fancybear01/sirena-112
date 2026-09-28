@@ -14,6 +14,7 @@ enum class SessionEventType(val value: String) {
     MEDIA_LATENCY("media.latency"),
     TRANSCRIPT_PARTIAL("transcript.partial"),
     TRANSCRIPT_FINAL("transcript.final"),
+    RECORDING_READY("recording.ready"),
     OPERATOR_SPEECH_STARTED("operator.speech_started"),
     OPERATOR_SPEECH_ENDED("operator.speech_ended"),
     CALLER_INTERRUPTED("caller.interrupted"),

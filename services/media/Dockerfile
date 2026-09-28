@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/media ./cmd/media
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
+RUN mkdir -p /recordings && chown nobody:nobody /recordings
 WORKDIR /app
 COPY --from=build /out/media /app/media
 EXPOSE 8091 18000-18099/udp

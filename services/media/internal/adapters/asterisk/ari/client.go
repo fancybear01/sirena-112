@@ -37,12 +37,18 @@ type Client struct {
 	rtpPortEnd    int
 	echoFactory   ports.EchoFactory
 
-	connected atomic.Bool
-	mu        sync.Mutex
-	handler   ports.EventHandler
-	runtimes  map[string]*callRuntime // key: callID
-	reserved  map[int]bool
-	byChan    map[string]string // channelID -> callID
+	connected  atomic.Bool
+	mu         sync.Mutex
+	handler    ports.EventHandler
+	runtimes   map[string]*callRuntime // key: callID
+	reserved   map[int]bool
+	recordings map[string]recordingResult
+	byChan     map[string]string // channelID -> callID
+}
+
+type recordingResult struct {
+	info *ports.RecordingInfo
+	err  error
 }
 
 type callRuntime struct {
@@ -98,6 +104,7 @@ func NewClient(cfg Config) *Client {
 		rtpPort:       cfg.RTPPort,
 		rtpPortEnd:    cfg.RTPPortEnd,
 		reserved:      map[int]bool{},
+		recordings:    map[string]recordingResult{},
 		echoFactory:   cfg.EchoFactory,
 		runtimes:      map[string]*callRuntime{},
 		byChan:        map[string]string{},
@@ -248,12 +255,26 @@ func (c *Client) DestroyCall(ctx context.Context, res ports.CallResources) error
 	rt.stopOnce.Do(func() { close(rt.done) })
 	if rt.echo != nil {
 		_ = rt.echo.Stop(ctx)
+		if source, ok := rt.echo.(ports.RecordingSession); ok {
+			info, err := source.Recording()
+			c.mu.Lock()
+			c.recordings[rt.callID] = recordingResult{info, err}
+			c.mu.Unlock()
+		}
 	}
 	if err := c.cleanup(ctx, res); err != nil {
 		return err
 	}
 	c.forget(rt)
 	return nil
+}
+
+func (c *Client) TakeRecording(callID string) (*ports.RecordingInfo, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := c.recordings[callID]
+	delete(c.recordings, callID)
+	return result.info, result.err
 }
 
 func (c *Client) cleanup(ctx context.Context, res ports.CallResources) error {

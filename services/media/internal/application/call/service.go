@@ -323,6 +323,23 @@ func (s *Service) finish(ctx context.Context, rt *runtime, state domain.CallStat
 		// Keep IDs and the session reservation so a repeated hangup can retry cleanup.
 		return rt.cleanupErr
 	}
+	if source, ok := s.asterisk.(ports.RecordingSource); ok {
+		record, recordErr := source.TakeRecording(rt.call.ID)
+		if recordErr != nil {
+			state = domain.CallStateFailed
+			_ = s.publish(cleanupCtx, rt.call, domain.EventMediaError, map[string]any{"message": "call recording failed"})
+			s.log.Error("call recording failed", "callId", rt.call.ID, "err", recordErr)
+		} else if record != nil {
+			if err := s.publish(cleanupCtx, rt.call, "recording.ready", map[string]any{
+				"recordingId": record.CallID, "durationMs": record.DurationMS,
+				"bytes": record.Bytes, "format": "wav", "sampleRate": 8000, "channels": 2,
+				"url": "/api/teacher/sessions/" + record.SessionID + "/recording",
+			}); err != nil {
+				state = domain.CallStateFailed
+				_ = s.publish(cleanupCtx, rt.call, domain.EventMediaError, map[string]any{"message": "recording metadata delivery failed"})
+			}
+		}
+	}
 	rt.call.State = state
 	payload := map[string]any{"callId": rt.call.ID, "aiSessionId": rt.call.AISessionID, "channelId": rt.call.AsteriskChannelID}
 	if cause != nil {
