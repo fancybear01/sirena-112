@@ -15,7 +15,6 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import { getApiErrorMessage } from '../../api/errors';
-import { secureAuth } from '../../api/auth';
 import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
 import type { ServiceStatus } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
@@ -187,7 +186,7 @@ export function TeacherPage({
   }, [loadAnalytics, session?.id, session?.report?.score, session?.state]);
 
   useEffect(() => {
-    if (secureAuth && api.getStudents) {
+    if (api.getStudents) {
       void api.getStudents().then((items) => {
         setStudents(items);
         setStudentId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null);
@@ -282,7 +281,7 @@ export function TeacherPage({
     setOperationError('');
     setIsLaunching(true);
     try {
-      if (secureAuth && !studentId) throw new Error('Выберите студента');
+      if (api.getStudents && !studentId) throw new Error('Выберите студента');
       setSession(await api.launchSession(selectedScenario.id, studentId ?? undefined));
     } catch (error) {
       setOperationError(getApiErrorMessage(error, 'Не удалось запустить занятие. Попробуйте ещё раз.'));
@@ -328,8 +327,8 @@ export function TeacherPage({
           Открыть учебное табло
         </Button>
       </Group>
-      {secureAuth && <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />}
-      {secureAuth && <TrainingHistoryPanel role="teacher" />}
+      <ScenarioWorkflowPanel onApproved={() => void loadScenarios()} />
+      <TrainingHistoryPanel role="teacher" />
 
       <TeacherAnalytics
         summary={analytics}
@@ -578,14 +577,14 @@ export function TeacherPage({
                       </Text>
                     </div>
                   </Group>
-                  {secureAuth && <Select mt="xl" label="Студент группы" placeholder="Выберите студента"
+                  {api.getStudents && <Select mt="xl" label="Студент группы" placeholder="Выберите студента"
                     data={students.map((item) => ({ value: item.id, label: `${item.displayName} (${item.username})` }))}
                     value={studentId} onChange={setStudentId} />}
                   <Button
                     fullWidth
                     mt="xl"
                     leftSection={<IconPlayerPlay size={18} />}
-                    disabled={selectedScenario.status !== 'READY' || (secureAuth && !studentId)}
+                    disabled={selectedScenario.status !== 'READY' || Boolean(api.getStudents && !studentId)}
                     loading={isLaunching}
                     onClick={() => void launchSession()}
                   >

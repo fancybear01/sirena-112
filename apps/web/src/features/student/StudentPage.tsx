@@ -36,7 +36,6 @@ import type {
   ServiceStatus,
 } from '../../api/types';
 import { getApiErrorMessage } from '../../api/errors';
-import { secureAuth } from '../../api/auth';
 import { apiConfig } from '../../api/config';
 import { createHttpClient } from '../../api/httpClient';
 import { ErrorState, LoadingState } from '../../shared/StatePlaceholder';
@@ -611,7 +610,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
   if (loadError) {
     return <Stack gap="md">
-      {secureAuth && <TrainingHistoryPanel role="student" />}
+      <TrainingHistoryPanel role="student" />
       <ErrorState title="Не удалось получить задание" description={loadError} onRetry={() => void loadAssignment()} />
     </Stack>;
   }
@@ -627,7 +626,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
 
   return (
     <Stack className="student-page" gap="md">
-      {secureAuth && <TrainingHistoryPanel role="student" />}
+      <TrainingHistoryPanel role="student" />
       <Paper className="assignment-brief" withBorder radius="sm" p="md">
         <div className="assignment-brief__main">
           <Text className="page-eyebrow">Учебная сессия · классификатор {cardForm.classifierVersion}</Text>
@@ -947,7 +946,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
         {report && (
           <>
             <ReportView report={report} elapsedSeconds={timer.elapsedSeconds} timeLimitExceeded={timeLimitExceeded} />
-            {secureAuth && <Paper withBorder radius="lg" p="md">
+            <Paper withBorder radius="lg" p="md">
               <Text fw={600}>Предложить учебный вариант</Text>
               <Text size="sm" c="dimmed">Core перенесёт только признаки и варианты ответов из оценённой карточки. ФИО, телефон, адрес и свободный текст не попадут в сценарий. Преподаватель проверит его перед назначением.</Text>
               {proposalStatus && <Text size="sm" role="status" mt="sm">{proposalStatus}</Text>}
@@ -959,7 +958,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
                   .catch((cause) => setProposalStatus(getApiErrorMessage(cause, 'Не удалось предложить карточку.')))
                   .finally(() => setProposalBusy(false));
               }}>Предложить преподавателю</Button>
-            </Paper>}
+            </Paper>
           </>
         )}
       </>
