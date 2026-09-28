@@ -31,7 +31,7 @@ class TrainingAnalyticsTest {
 
     @Test
     fun `empty set has zero counts and no invented average`() {
-        val empty = TrainingAnalyticsController(InMemoryTrainingSessionRepository(), InMemorySessionReportRepository(), access).summary()
+        val empty = TrainingAnalyticsService(InMemoryTrainingSessionRepository(), InMemorySessionReportRepository(), access).summary()
         assertThat(empty.completedSessions).isZero()
         assertThat(empty.averagePercent).isNull()
         assertThat(empty.medianPercent).isNull()

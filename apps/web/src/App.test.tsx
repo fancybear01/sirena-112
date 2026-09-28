@@ -46,6 +46,7 @@ describe('frontend routes', () => {
     ['/admin', 'Администрирование'],
     ['/teacher', 'Сценарии'],
     ['/student', 'Моё задание'],
+    ['/board', 'Оперативное табло'],
   ])('renders %s directly', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();

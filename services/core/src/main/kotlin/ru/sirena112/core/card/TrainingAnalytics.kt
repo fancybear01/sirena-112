@@ -3,6 +3,7 @@ package ru.sirena112.core.card
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.stereotype.Service
 import ru.sirena112.core.domain.SessionMode
 import ru.sirena112.core.domain.SessionState
 import ru.sirena112.core.domain.TrainingSessionRepository
@@ -27,12 +28,17 @@ data class TrainingAnalyticsSummary(
 
 @RestController
 @RequestMapping("/api/teacher/analytics")
-class TrainingAnalyticsController(
+class TrainingAnalyticsController(private val analytics: TrainingAnalyticsService) {
+    @GetMapping("/summary")
+    fun summary(): TrainingAnalyticsSummary = analytics.summary()
+}
+
+@Service
+class TrainingAnalyticsService(
     private val sessions: TrainingSessionRepository,
     private val reports: SessionReportRepository,
     private val access: ru.sirena112.core.auth.SessionAccess
 ) {
-    @GetMapping("/summary")
     fun summary(): TrainingAnalyticsSummary {
         val actor = access.current()
         val scored = sessions.findAll().asSequence()
