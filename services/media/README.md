@@ -85,6 +85,10 @@ curl -sS -X POST http://127.0.0.1:8091/internal/v1/calls/hangup \
 С непустым `CORE_BASE_URL` события lifecycle, `transcript.final` и `media.error`
 уходят в `/internal/v1/media/events`. Без него используется logging publisher.
 
+Запись учебных AI-звонков включается отдельно через `MEDIA_RECORDINGS_DIR` и
+авторизованный Core. Формат WAV stereo, защищённое скачивание и smoke описаны
+в [docs/recording.md](docs/recording.md).
+
 ## RTP
 
 | | |

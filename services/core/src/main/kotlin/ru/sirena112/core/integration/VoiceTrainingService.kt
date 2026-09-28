@@ -188,6 +188,7 @@ class VoiceTrainingService(
             SessionEventType.CALL_ENDED.value, SessionEventType.MEDIA_ERROR.value,
             SessionEventType.MEDIA_LATENCY.value, SessionEventType.SYSTEM_ERROR.value,
             SessionEventType.TRANSCRIPT_PARTIAL.value, SessionEventType.TRANSCRIPT_FINAL.value,
+            SessionEventType.RECORDING_READY.value,
             SessionEventType.OPERATOR_SPEECH_STARTED.value, SessionEventType.OPERATOR_SPEECH_ENDED.value,
             SessionEventType.CALLER_INTERRUPTED.value
         )

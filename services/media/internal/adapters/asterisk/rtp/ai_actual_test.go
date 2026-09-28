@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -80,6 +81,7 @@ func TestActualAIProtocol(t *testing.T) {
 	}
 	generated := post("/ai/scenarios/generate", map[string]any{"category": "FIRE", "count": 4})
 	scenario := generated["scenarios"].([]any)[0]
+	recordings := t.TempDir()
 	for call := 0; call < 2; call++ {
 		sessionID := uuid.NewString()
 		created := post("/ai/voice/sessions", map[string]any{"sessionId": sessionID, "scenario": scenario})
@@ -90,7 +92,8 @@ func TestActualAIProtocol(t *testing.T) {
 		if !real && created["speech"] != "scripted+silence" {
 			t.Fatal(created)
 		}
-		sess, port, err := (&AIFactory{URL: fmt.Sprintf("ws://127.0.0.1:%d", port), Log: slog.Default()}).Create("127.0.0.1", 0)
+		callID := uuid.NewString()
+		sess, port, err := (&AIFactory{URL: fmt.Sprintf("ws://127.0.0.1:%d", port), Log: slog.Default(), RecordingDir: recordings, MaxRecording: time.Minute}).Create("127.0.0.1", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +101,7 @@ func TestActualAIProtocol(t *testing.T) {
 		s.Start(context.Background())
 		defer s.Stop(context.Background())
 		events := make(chan ports.ARIEvent, 16)
-		if err := s.Activate(ports.StartCallRequest{CallID: uuid.NewString(), SessionID: sessionID, AISessionID: aiID}, func(e ports.ARIEvent) { events <- e }); err != nil {
+		if err := s.Activate(ports.StartCallRequest{CallID: callID, SessionID: sessionID, AISessionID: aiID}, func(e ports.ARIEvent) { events <- e }); err != nil {
 			t.Fatal(err)
 		}
 		peer, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
@@ -106,6 +109,7 @@ func TestActualAIProtocol(t *testing.T) {
 			t.Fatal(err)
 		}
 		seq := uint16(0)
+		var spans [][2]int64
 		for turn := 0; turn < 2; turn++ {
 			input := bytes.Repeat([]byte{255}, 480)
 			if real {
@@ -138,6 +142,12 @@ func TestActualAIProtocol(t *testing.T) {
 				if e.Payload["simulated"] != !real {
 					t.Fatal("wrong simulated flag")
 				}
+				start, okStart := e.Payload["recordingStartedAtMs"].(int64)
+				end, okEnd := e.Payload["recordingEndedAtMs"].(int64)
+				if !okStart || !okEnd || start >= end {
+					t.Fatalf("transcript has no WAV position: %+v", e.Payload)
+				}
+				spans = append(spans, [2]int64{start, end})
 			case <-time.After(30 * time.Second):
 				t.Fatal("no transcript")
 			}
@@ -186,6 +196,17 @@ func TestActualAIProtocol(t *testing.T) {
 			t.Logf("call=%d turn=%d inputFrames=%d outputRTP=%d elapsed=%s simulated=%v", call+1, turn+1, count, frames, last.Sub(first), !real)
 		}
 		s.Stop(context.Background())
+		info, err := s.Recording()
+		if err != nil || info == nil || info.CallID != callID || info.SessionID != sessionID || info.DurationMS < 100 || info.Bytes != 44+info.DurationMS*32 {
+			t.Fatalf("recording metadata: %+v %v", info, err)
+		}
+		if len(spans) != 2 || spans[0][1] >= spans[1][0] || spans[1][1] > info.DurationMS {
+			t.Fatalf("transcript/WAV timeline mismatch: %v, duration %d", spans, info.DurationMS)
+		}
+		wave, err := os.ReadFile(filepath.Join(recordings, sessionID, callID+".wav"))
+		if err != nil || len(wave) < 44 || len(wave) != int(info.Bytes) || string(wave[:4]) != "RIFF" {
+			t.Fatalf("recording not playable: %v, size %d", err, len(wave))
+		}
 		peer.Close()
 		req, _ := http.NewRequest(http.MethodDelete, base+"/ai/voice/sessions/"+aiID, nil)
 		resp, err := httpClient.Do(req)

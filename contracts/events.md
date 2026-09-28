@@ -40,6 +40,7 @@ CREATED -> READY -> RINGING -> ACTIVE -> COMPLETED -> SCORING -> SCORED
 | `media.latency` | media | core |
 | `transcript.partial` | media | core |
 | `transcript.final` | media | core |
+| `recording.ready` | media | core |
 | `operator.speech_started` | media | core |
 | `operator.speech_ended` | media | core |
 | `caller.interrupted` | media | core |

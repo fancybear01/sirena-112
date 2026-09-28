@@ -28,6 +28,7 @@ server:
 
 core:
   storage: ${CORE_STORAGE:in-memory}
+  recordings-dir: ${CORE_RECORDINGS_DIR:}
   auth:
     enabled: ${CORE_AUTH_ENABLED:false}
     bootstrap-admin-username: ${CORE_BOOTSTRAP_ADMIN_USERNAME:}

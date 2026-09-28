@@ -12,6 +12,7 @@ import (
 	"github.com/fancybear01/sirena-112/services/media/internal/adapters/asterisk/ari"
 	"github.com/fancybear01/sirena-112/services/media/internal/adapters/asterisk/rtp"
 	coreadapter "github.com/fancybear01/sirena-112/services/media/internal/adapters/core"
+	"github.com/fancybear01/sirena-112/services/media/internal/adapters/recording"
 	"github.com/fancybear01/sirena-112/services/media/internal/application/call"
 	"github.com/fancybear01/sirena-112/services/media/internal/application/ports"
 	"github.com/fancybear01/sirena-112/services/media/internal/config"
@@ -25,10 +26,21 @@ func main() {
 		panic(err)
 	}
 	log := logger.New(cfg.LogLevel)
+	if cfg.RecordingDir != "" {
+		if err := os.MkdirAll(cfg.RecordingDir, 0700); err != nil {
+			panic(err)
+		}
+		if err := recording.RemoveIncomplete(cfg.RecordingDir); err != nil {
+			panic(err)
+		}
+		if err := recording.Sweep(cfg.RecordingDir, time.Duration(cfg.RecordingRetentionHours)*time.Hour); err != nil {
+			panic(err)
+		}
+	}
 
 	var echoFactory ports.EchoFactory = &rtp.Factory{Log: log}
 	if cfg.Mode == "ai" {
-		echoFactory = &rtp.AIFactory{URL: cfg.AIBaseURL, Log: log}
+		echoFactory = &rtp.AIFactory{URL: cfg.AIBaseURL, Log: log, RecordingDir: cfg.RecordingDir, MaxRecording: time.Duration(cfg.RecordingMaxSeconds) * time.Second}
 	}
 	ariClient := ari.NewClient(ari.Config{
 		BaseURL:       cfg.ARIBaseURL,
@@ -53,6 +65,22 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	go calls.RunCleanup(ctx)
+	if cfg.RecordingDir != "" {
+		go func() {
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := recording.Sweep(cfg.RecordingDir, time.Duration(cfg.RecordingRetentionHours)*time.Hour); err != nil {
+						log.Error("recording retention sweep failed", "err", err)
+					}
+				}
+			}
+		}()
+	}
 
 	if err := ariClient.Subscribe(ctx, calls.HandleARIEvent); err != nil {
 		log.Error("ari subscribe failed", "err", err)

@@ -15,6 +15,13 @@ RTP ↔ AI bridge и HTTP publisher Media — в #53. Режим `echo` оста
 
 Media **не** ходит в PostgreSQL и не считает score.
 
+Для авторизованного учебного AI-звонка Media может также сохранить WAV в
+закрытый общий том и послать `recording.ready` с `recordingId=callId`,
+`durationMs`, `bytes`, `format=wav`, `sampleRate=8000`, `channels=2` и ссылкой
+на `/api/teacher/sessions/{sessionId}/recording`. Core принимает событие с той
+же проверкой `sessionId/callId/aiSessionId`; сам файл выдаёт только после
+проверки группы преподавателя. Запись публикуется до `call.ended`.
+
 ## Transport
 
 - Core → Media: HTTP JSON, base URL `CORE_MEDIA_BASE_URL` (по умолчанию `http://127.0.0.1:8091`)

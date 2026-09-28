@@ -82,6 +82,9 @@ class VoiceTrainingIntegrationTest {
         assertNotNull(facade.get(id).startedAt)
         assertEquals("ACTIVE", voice.getCall(id).state)
         assertTrue(voice.receive(event(id, call.callId, SessionEventType.TRANSCRIPT_FINAL)))
+        val recording = event(id, call.callId, SessionEventType.RECORDING_READY)
+        assertTrue(voice.receive(recording))
+        assertFalse(voice.receive(recording))
 
         assertEquals("ENDED", voice.hangup(id).state)
         assertEquals(SessionState.ACTIVE, facade.get(id).state) // callback owns business state
