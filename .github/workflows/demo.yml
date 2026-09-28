@@ -42,7 +42,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Build Core with PostgreSQL
-        run: CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
+        run: AI_REQUIRE_REAL_SPEECH=false CORE_SCENARIO_IMPORT_ENABLED=true docker compose up --build --detach --wait postgres core
       - name: Run card smoke scenario against PostgreSQL
         run: python scripts/smoke_card_1050602.py --core http://127.0.0.1:8080 --expect-fallback
       - name: Import a validated scenario through local Core API
