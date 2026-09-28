@@ -38,6 +38,14 @@ jobs:
     name: core / postgres-recovery
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Речевые модели весят полтораста мегабайт и в репозитории не лежат,
+      # поэтому в CI их нет. По умолчанию AI требует настоящую речь и без
+      # моделей отдаёт 503 на /ready, из-за чего контейнер становится
+      # unhealthy, а Core от него зависит - и шаг падал целиком, хотя
+      # проверяется здесь восстановление PostgreSQL, а не голос.
+      # Строгую проверку оставляем демо-стенду, где модели есть.
+      AI_REQUIRE_REAL_SPEECH: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
