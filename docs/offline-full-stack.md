@@ -35,8 +35,9 @@ Docker Engine с Compose v2, PowerShell 5.1+ на Windows либо Bash, `curl`,
 
 - Windows 10/11 x86-64 с Docker Desktop (Linux containers) либо Ubuntu 20.04+
   x86-64 с Docker Engine и Compose v2;
+- Python 3 для локального admin helper;
 - минимум 4 CPU, 8 ГБ памяти, доступной Docker, и 4 ГБ свободного места;
-- свободные TCP-порты 5173, 8080, 8088, 8090, 8091, 8099, 5432 и 5060;
+- свободные TCP-порты 5173, 8080, 8088, 8090, 8091, 8099, 8100, 5432 и 5060;
 - свободные UDP-порты 5060 и 10000-10100.
 
 GPU не требуется. Все HTTP, SIP, RTP и служебные порты доступны только на
@@ -68,12 +69,14 @@ offline-bundle/
   models/
   scripts/stack.ps1
   scripts/stack.sh
+  scripts/admin_helper.py
   compose.yaml
   compose.offline.yaml
   .env.example
   SHA256SUMS
   VERSION
   docs/offline-full-stack.md
+  docs/admin-operations.md
 ```
 
 Секретный `.env` в пакет намеренно не входит. Не помещайте в пакет реальные
@@ -193,6 +196,7 @@ docker compose --env-file .env -f compose.yaml -f compose.offline.yaml down --vo
 | 8090 | TCP | AI | `127.0.0.1` |
 | 8091 | TCP | Media | `127.0.0.1` |
 | 8099 | TCP | Monitor | `127.0.0.1` |
+| 8100 | TCP | локальный admin helper | `127.0.0.1` |
 | 5432 | TCP | PostgreSQL | `127.0.0.1` |
 | 5060 | TCP/UDP | SIP | `SIRENA_BIND_ADDRESS` |
 | 10000-10100 | UDP | RTP | `SIRENA_BIND_ADDRESS` |

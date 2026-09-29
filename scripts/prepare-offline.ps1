@@ -100,9 +100,11 @@ try {
     Copy-Item -LiteralPath (Join-Path $repositoryRoot '.env.example') -Destination $outputRoot -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stack.ps1') -Destination (Join-Path $outputRoot 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stack.sh') -Destination (Join-Path $outputRoot 'scripts') -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'admin_helper.py') -Destination (Join-Path $outputRoot 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-bundle.ps1') -Destination (Join-Path $outputRoot 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-bundle.sh') -Destination (Join-Path $outputRoot 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\offline-full-stack.md') -Destination (Join-Path $outputRoot 'docs') -Force
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\admin-operations.md') -Destination (Join-Path $outputRoot 'docs') -Force
     Copy-Item -LiteralPath $modelManifest -Destination (Join-Path $outputRoot 'infra\offline') -Force
     Copy-Item -Path (Join-Path $modelRoot '*') -Destination (Join-Path $outputRoot 'models') -Recurse -Force
 

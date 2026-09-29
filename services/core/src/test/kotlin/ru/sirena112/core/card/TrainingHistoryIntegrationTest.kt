@@ -48,6 +48,13 @@ class TrainingHistoryIntegrationTest {
         return result.request.session as MockHttpSession
     }
 
+    private fun loginAdmin(): MockHttpSession {
+        val result = mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"username":"admin","password":"admin-password-for-tests"}""")).andReturn()
+        assertEquals(200, result.response.status)
+        return result.request.session as MockHttpSession
+    }
+
     @Test fun `history is scoped and corrections preserve original score`() {
         val groupA = TrainingGroup(UUID.randomUUID(), "history-a-${UUID.randomUUID()}").also(groups::insert)
         val groupB = TrainingGroup(UUID.randomUUID(), "history-b-${UUID.randomUUID()}").also(groups::insert)
@@ -60,6 +67,7 @@ class TrainingHistoryIntegrationTest {
         val studentASession = login(studentA)
         val studentBSession = login(studentB)
         val studentSameGroupSession = login(studentSameGroup)
+        val adminSession = loginAdmin()
         val scenario = scenarios.findAll().first()
         val first = sessions.create(scenario, SessionMode.CARD, studentId = studentA.id, teacherId = teacherAccount.id, groupId = groupA.id)
         val second = sessions.create(scenario, SessionMode.CARD, studentId = studentA.id, teacherId = teacherAccount.id, groupId = groupA.id)
@@ -85,6 +93,10 @@ class TrainingHistoryIntegrationTest {
         assertEquals(403, read("/api/student/history/${first.id}", studentBSession).response.status)
         assertEquals(403, read("/api/student/history/${first.id}", studentSameGroupSession).response.status)
         assertEquals(false, read("/api/student/history", studentASession).response.contentAsString.contains(foreign.id.toString()))
+        assertEquals(200, read("/api/teacher/history/${first.id}", adminSession).response.status)
+        assertEquals(403, mvc.perform(post("/api/teacher/history/${first.id}/corrections").session(adminSession).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content("""{"newScore":99,"reason":"admin attempt"}"""))
+            .andReturn().response.status)
 
         val comment = mvc.perform(post("/api/teacher/history/${first.id}/comments").session(teacherA).with(csrf())
             .contentType(MediaType.APPLICATION_JSON).content("""{"text":"Разберите маршрутизацию"}""")).andReturn()

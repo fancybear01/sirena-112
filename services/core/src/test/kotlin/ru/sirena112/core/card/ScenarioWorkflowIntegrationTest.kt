@@ -52,9 +52,9 @@ class ScenarioWorkflowIntegrationTest {
     @Autowired lateinit var classifier: ClassifierService
     @Autowired @Qualifier("aiRestTemplate") lateinit var aiHttp: RestTemplate
 
-    private fun login(username: String): MockHttpSession {
+    private fun login(username: String, password: String = "teacher-password-123"): MockHttpSession {
         val result = mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(mapper.writeValueAsString(LoginRequest(username, "teacher-password-123")))).andReturn()
+            .content(mapper.writeValueAsString(LoginRequest(username, password)))).andReturn()
         assertEquals(200, result.response.status, result.response.contentAsString)
         return result.request.session as MockHttpSession
     }
@@ -75,6 +75,11 @@ class ScenarioWorkflowIntegrationTest {
         val studentSession = login(student.username)
         val foreignSession = login(foreign.username)
         val template = scenarios.findAll().first()
+        val adminSession = login("admin", "admin-password-for-tests")
+        assertEquals(200, mvc.perform(get("/api/teacher/scenarios/workflow").session(adminSession)).andReturn().response.status)
+        assertEquals(403, mvc.perform(post("/api/teacher/scenarios/workflow/drafts").session(adminSession).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(DraftRequest(template, "admin attempt"))))
+            .andReturn().response.status)
         val aiServer = MockRestServiceServer.createServer(aiHttp)
         aiServer.expect(requestTo("http://localhost:8090/ai/scenarios/generate"))
             .andRespond(withSuccess(mapper.writeValueAsString(mapOf("scenarios" to listOf(template))), MediaType.APPLICATION_JSON))
