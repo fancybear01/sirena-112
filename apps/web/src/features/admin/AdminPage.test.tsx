@@ -117,6 +117,7 @@ describe('admin user management', () => {
   it('loads users and creates a group and account without exposing stored passwords', async () => {
     renderPage();
     expect(await screen.findByText('teacher')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Роль teacher' })).toHaveValue('Преподаватель');
 
     await userEvent.type(screen.getByLabelText('Название'), 'Группа 3');
     await userEvent.click(screen.getByRole('button', { name: 'Создать группу' }));

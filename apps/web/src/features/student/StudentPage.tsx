@@ -673,7 +673,7 @@ export function StudentPage({ api = studentApi }: { api?: StudentApi }) {
             <Text size="xs">Поля со звёздочкой обязательны. Выводы Core недоступны для редактирования.</Text>
           </div>
           {submitError && (
-            <Alert color="red" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setSubmitError('')}>
+            <Alert color="red" role="alert" icon={<IconAlertCircle size={18} />} withCloseButton onClose={() => setSubmitError('')}>
               {submitError}
             </Alert>
           )}

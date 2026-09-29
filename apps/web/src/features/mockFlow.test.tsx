@@ -84,13 +84,13 @@ describe('teacher to student mock flow', () => {
 
     cleanup();
     renderPage(<TeacherPage api={createTeacherMockApi({ delayMs: 0, storage: window.localStorage })} />);
-    expect(await screen.findByText('SCORED')).toBeInTheDocument();
+    expect(await screen.findByText('Оценена')).toBeInTheDocument();
     expect(screen.getByText(/Оценка: 100 из 100/)).toBeInTheDocument();
     expect(await screen.findByText('Назначено: 14')).toBeInTheDocument();
 
     cleanup();
     renderPage(<TeacherPage api={createTeacherMockApi({ delayMs: 0, storage: window.localStorage })} />);
-    expect(await screen.findByText('SCORED')).toBeInTheDocument();
+    expect(await screen.findByText('Оценена')).toBeInTheDocument();
     expect(screen.getByText(/Оценка: 100 из 100/)).toBeInTheDocument();
   }, 20_000);
 });
