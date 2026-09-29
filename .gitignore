@@ -48,3 +48,6 @@ tmp/
 offline-bundle/
 secrets/
 /agent.md
+
+# Сертификаты TLS: выпускаются на месте, в репозиторий не попадают (#89)
+certs/
