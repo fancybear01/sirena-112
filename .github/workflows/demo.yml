@@ -80,6 +80,43 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  resilience:
+    name: demo / resilience
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AI_REQUIRE_REAL_SPEECH: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install monitor test dependency
+        run: python -m pip install --disable-pip-version-check "pytest>=8,<9"
+      - name: Validate resilience Compose configuration
+        run: docker compose -f compose.yaml -f compose.resilience.yaml config --quiet
+      - name: Test monitor and admin recovery alerts
+        run: |
+          python -m pytest infra/monitor/test_monitor.py -q
+          python -m unittest scripts.test_admin_helper
+      - name: Build and start two-Core resilience stack
+        run: >-
+          docker compose -f compose.yaml -f compose.resilience.yaml
+          up --build --detach --wait --wait-timeout 300 monitor
+      - name: Run 30-second recovery and failure acceptance
+        run: python scripts/check_resilience.py --network-outage-seconds 30
+      - name: Show resilience logs on failure
+        if: failure()
+        run: >-
+          docker compose -f compose.yaml -f compose.resilience.yaml
+          logs --no-color --tail=200
+          postgres ai media core core-2 core-gateway web monitor
+      - name: Stop resilience stack
+        if: always()
+        run: docker compose -f compose.yaml -f compose.resilience.yaml down -v
+
   smoke:
     name: demo / smoke
     runs-on: ubuntu-latest

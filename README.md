@@ -35,6 +35,8 @@ AI-абонент, система сверяет карточку с офици�
 - состояние Core, AI, Media, PostgreSQL и Asterisk, CPU/RAM/диск, ошибки;
 - запуск, остановка, перезапуск и обновление сервисов из интерфейса;
 - ежедневный backup базы с доказанным восстановлением;
+- восстановление занятия за 30 секунд после разрыва сети или падения Core,
+  профиль с двумя Core и автоматическим переключением;
 - метрики в формате Prometheus и отправка статуса во внешнюю систему.
 
 ## Измеренные показатели
@@ -44,6 +46,8 @@ AI-абонент, система сверяет карточку с офици�
 | Отклик API, p95 | ≤ 2 с | **0,14 с** |
 | Ход разговора с AI-абонентом | ≤ 1,2 с | **0,5 с** |
 | 20 занятий одновременно | ≤ 1,2 с | **0,67 с** на ход |
+| Восстановление после разрыва сети | ≤ 30 с | **0,016 с** на переподключение |
+| Переключение на второй Core | ≤ 30 с | **мгновенно**, через gateway |
 | Распознавание 3,3 с речи | — | **0,4 с** |
 | Синтез ответа | — | **0,2 с** |
 
@@ -140,7 +144,9 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d
 - `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев;
 - `demo / smoke` — два полных занятия `1050602` через реальные Core и AI;
 - `demo / compose` — сборка и проверка карточного Docker Compose;
-- `core / postgres-recovery` — восстановление состояния после перезапуска.
+- `core / postgres-recovery` — восстановление состояния после перезапуска;
+- `demo / resilience` — разрыв сети на 30 с, отказ и переключение Core,
+  падение AI, Media и PostgreSQL.
 
 Запускаемые проверки на живом стенде:
 
@@ -152,6 +158,8 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d
 | форматы данных | `python scripts/check_formats.py` |
 | backup и восстановление | `python scripts/check_backup_restore.py` |
 | TLS | `python scripts/check_tls.py` |
+| отказоустойчивость | `python scripts/check_resilience.py` |
+| минимизация персональных данных | `python scripts/check_personal_data.py` |
 | API расширений | `python scripts/ext_api_client.py` |
 | покрытие требований | `python scripts/check_coverage.py` |
 
@@ -165,8 +173,8 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d
 | Голос | [`voice-two-turns.md`](docs/voice-two-turns.md), [`voice-shipping-stack.md`](docs/voice-shipping-stack.md), [`voice-contract-68.md`](docs/voice-contract-68.md), [`voice-ws-for-media.md`](docs/voice-ws-for-media.md), [`voice-readiness.md`](docs/voice-readiness.md) |
 | AI и оценка | [`ai-benchmark.md`](docs/ai-benchmark.md), [`ai-text-review.md`](docs/ai-text-review.md), [`ai-load.md`](docs/ai-load.md) |
 | Обучение и аналитика | [`training-analytics-75.md`](docs/training-analytics-75.md), [`training-history.md`](docs/training-history.md) |
-| Безопасность | [`auth-rbac.md`](docs/auth-rbac.md), [`tls.md`](docs/tls.md), [`security-recordings-task.md`](docs/security-recordings-task.md) |
-| Эксплуатация | [`offline-full-stack.md`](docs/offline-full-stack.md), [`admin-operations.md`](docs/admin-operations.md), [`backup-restore.md`](docs/backup-restore.md), [`monitoring-integration.md`](docs/monitoring-integration.md), [`media-load.md`](docs/media-load.md) |
+| Безопасность | [`auth-rbac.md`](docs/auth-rbac.md), [`tls.md`](docs/tls.md), [`security-data-review.md`](docs/security-data-review.md), [`security-recordings-task.md`](docs/security-recordings-task.md) |
+| Эксплуатация | [`offline-full-stack.md`](docs/offline-full-stack.md), [`resilience.md`](docs/resilience.md), [`admin-operations.md`](docs/admin-operations.md), [`backup-restore.md`](docs/backup-restore.md), [`monitoring-integration.md`](docs/monitoring-integration.md), [`media-load.md`](docs/media-load.md) |
 | Данные и интеграции | [`format-matrix.md`](docs/format-matrix.md), [`postgres-core.md`](docs/postgres-core.md), [`extension-api.md`](docs/extension-api.md), [`contracts/`](contracts/README.md) |
 | Сервисы | [`core`](services/core/README.md), [`ai`](services/ai/README.md), [`media`](services/media/README.md), [`web`](apps/web/README.md), [`asterisk`](infra/asterisk/README.md) |
 | Презентация | [`presentation-content.md`](docs/presentation-content.md) |

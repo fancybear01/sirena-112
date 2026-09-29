@@ -22,7 +22,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
   recordings-init:
@@ -58,7 +58,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
   asterisk:
@@ -87,7 +87,7 @@ services:
       timeout: 5s
       retries: 18
       start_period: 30s
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
   media:
@@ -134,7 +134,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    restart: unless-stopped
+    restart: "on-failure:5"
     stop_grace_period: 25s
     logging: *default-logging
 
@@ -184,7 +184,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    restart: unless-stopped
+    restart: "on-failure:5"
     stop_grace_period: 25s
     logging: *default-logging
 
@@ -210,7 +210,7 @@ services:
       - /var/cache/nginx
       - /var/run
       - /tmp
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
   monitor:
@@ -245,7 +245,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
   card-smoke:
@@ -318,7 +318,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
+    restart: "on-failure:5"
     logging: *default-logging
 
 volumes:

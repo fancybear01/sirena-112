@@ -92,7 +92,8 @@ Go является единственной медиаграницей для C
 | RBAC | роли ADMIN / TEACHER / STUDENT, доступ по группам, CSRF | `auth-rbac.md` |
 | Межсервисная аутентификация | отдельные Bearer-токены Media, AI и расширений | `auth-rbac.md` |
 | Аудит значимых действий | `auth_audit`, журнал экспертных правок оценки `training_feedback` | `training-history.md` |
-| Восстановление после сбоя | состояние в PostgreSQL, WebSocket с автопереподключением и повтором событий | `postgres-core.md` |
+| Восстановление после сбоя | состояние в PostgreSQL, reconnect по `afterEventId`, два Core за gateway, восстановление ≤ 30 с | `resilience.md` |
+| Минимизация ПДн | перечень хранимых данных и автоматический поиск ПДн | `security-data-review.md` |
 | Резервное копирование | ежедневный дамп, ротация, проверка restore со сверкой | `backup-restore.md` |
 | Наблюдаемость | readiness всех компонентов, метрики Prometheus, push во внешнюю систему | `monitoring-integration.md` |
 | Расширяемость | версионированный read-only API `/api/ext/v1` | `extension-api.md` |

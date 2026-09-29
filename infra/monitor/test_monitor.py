@@ -56,6 +56,33 @@ DOWN = {
 }
 
 
+# --- bounded recovery alerts -------------------------------------------------
+
+
+def test_failed_recovery_is_raised_after_bounded_number_of_checks():
+    tracker = monitor.AlertTracker(failure_threshold=3)
+    down = [{"name": "core", "status": "DOWN", "reason": "offline"}]
+
+    assert tracker.update(down)[0]["recovery"] == "PENDING"
+    assert tracker.update(down)[0]["recovery"] == "PENDING"
+    failed = tracker.update(down)[0]
+
+    assert failed["recovery"] == "FAILED"
+    assert failed["severity"] == "critical"
+    assert failed["failureCount"] == 3
+
+
+def test_successful_recovery_clears_alert_counter():
+    tracker = monitor.AlertTracker(failure_threshold=2)
+    tracker.update([{"name": "media", "status": "DOWN"}])
+
+    assert tracker.update([{"name": "media", "status": "UP"}]) == []
+    alert = tracker.update([{"name": "media", "status": "DOWN"}])[0]
+
+    assert alert["failureCount"] == 1
+    assert alert["recovery"] == "PENDING"
+
+
 # --- формат метрик ------------------------------------------------------------
 
 
