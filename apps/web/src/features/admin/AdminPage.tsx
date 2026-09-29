@@ -3,6 +3,7 @@ import { Alert, Button, Group, Paper, PasswordInput, Select, Stack, Table, Text,
 import type { AuthRole } from '../../api/auth';
 import { apiConfig } from '../../api/config';
 import { createHttpClient } from '../../api/httpClient';
+import { AdminSystemPanel } from './AdminSystemPanel';
 
 type GroupRecord = { id: string; name: string };
 type UserRecord = { id: string; username: string; displayName: string; role: AuthRole;
@@ -50,7 +51,8 @@ export function AdminPage() {
   }
 
   return <Stack className="admin-page" gap="xl" aria-busy={loading || busy}>
-    <Title order={1}>Пользователи и группы</Title>
+    <AdminSystemPanel />
+    <Title order={2}>Пользователи и группы</Title>
     {error && <Alert color="red" role="alert">{error}</Alert>}
     {loading && <Text role="status" aria-live="polite">Загружаем пользователей и группы…</Text>}
     <Paper component="form" withBorder p="lg" radius="lg" onSubmit={(event) => {

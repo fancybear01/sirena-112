@@ -1,7 +1,9 @@
 param(
     [ValidateSet('init', 'doctor', 'start', 'stop', 'restart', 'status', 'smoke', 'logs', 'update')]
     [string]$Action = 'status',
-    [string]$BundlePath = ''
+    [string]$BundlePath = '',
+    [ValidateSet('all', 'core', 'ai', 'media', 'postgres', 'asterisk', 'web', 'monitor')]
+    [string]$Service = 'all'
 )
 
 Set-StrictMode -Version Latest
@@ -46,6 +48,35 @@ function Get-ComposeArguments {
 function Invoke-Compose {
     param([string[]]$Arguments, [switch]$Capture)
     Invoke-Docker -Arguments ((Get-ComposeArguments) + $Arguments) -Capture:$Capture
+}
+
+function Test-AdminHelper {
+    try {
+        $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8100/health' -TimeoutSec 1
+        return $health.status -eq 'UP'
+    } catch {
+        return $false
+    }
+}
+
+function Start-AdminHelper {
+    if (Test-AdminHelper) { return }
+    $helper = Join-Path $repositoryRoot 'scripts\admin_helper.py'
+    $launcher = Get-Command py -ErrorAction SilentlyContinue
+    $arguments = @('-3', $helper)
+    if (-not $launcher) {
+        $launcher = Get-Command python -ErrorAction SilentlyContinue
+        $arguments = @($helper)
+    }
+    if (-not $launcher) {
+        throw 'Python 3 не найден. Он нужен локальному backend/helper админки.'
+    }
+    Start-Process -FilePath $launcher.Source -ArgumentList $arguments -WorkingDirectory $repositoryRoot -WindowStyle Hidden | Out-Null
+    foreach ($attempt in 1..20) {
+        Start-Sleep -Milliseconds 250
+        if (Test-AdminHelper) { return }
+    }
+    throw 'Локальный backend/helper админки не запустился на 127.0.0.1:8100.'
 }
 
 function New-RandomSecret {
@@ -190,17 +221,28 @@ try {
         'init' { Initialize-Environment }
         'doctor' { Invoke-Doctor }
         'start' {
+            Start-AdminHelper
             Invoke-Doctor
-            Invoke-Compose -Arguments @('up', '--detach', '--wait', '--wait-timeout', '300', '--no-build', '--pull', 'never')
-            Write-Host 'Стенд готов: Web http://localhost:5173, мониторинг http://localhost:8099/status'
+            $arguments = @('up', '--detach', '--wait', '--wait-timeout', '300', '--no-build', '--pull', 'never')
+            if ($Service -ne 'all') { $arguments += @('--no-deps', $Service) }
+            Invoke-Compose -Arguments $arguments
+            Write-Host 'Стенд готов: Web http://localhost:5173, мониторинг http://localhost:8099/status, admin helper http://localhost:8100'
         }
         'stop' {
-            Invoke-Compose -Arguments @('down')
-            Write-Host 'Контейнеры остановлены; том PostgreSQL сохранён.'
+            if ($Service -eq 'all') {
+                Invoke-Compose -Arguments @('down')
+                Write-Host 'Контейнеры остановлены; том PostgreSQL сохранён. Admin helper оставлен для повторного запуска.'
+            } else {
+                Invoke-Compose -Arguments @('stop', $Service)
+            }
         }
         'restart' {
-            Invoke-Compose -Arguments @('restart')
-            Invoke-Compose -Arguments @('up', '--detach', '--wait', '--wait-timeout', '300', '--no-build', '--pull', 'never')
+            Start-AdminHelper
+            $targets = if ($Service -eq 'all') { @() } else { @($Service) }
+            Invoke-Compose -Arguments (@('restart') + $targets)
+            $arguments = @('up', '--detach', '--wait', '--wait-timeout', '300', '--no-build', '--pull', 'never')
+            if ($Service -ne 'all') { $arguments += @('--no-deps', $Service) }
+            Invoke-Compose -Arguments $arguments
         }
         'status' {
             Invoke-Compose -Arguments @('ps')
@@ -216,6 +258,8 @@ try {
         }
         'logs' { Invoke-Compose -Arguments @('logs', '--no-color', '--tail', '200') }
         'update' {
+            if ($Service -ne 'all') { throw 'Пакетное обновление выполняется только для всего комплекса.' }
+            Start-AdminHelper
             if (-not $BundlePath) { $BundlePath = Join-Path $repositoryRoot 'offline-bundle\images.tar' }
             $resolvedBundle = (Resolve-Path -LiteralPath $BundlePath).Path
             Invoke-Docker -Arguments @('load', '--input', $resolvedBundle)

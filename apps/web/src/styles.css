@@ -131,6 +131,11 @@ textarea:focus-visible,
 .history-correction > .mantine-InputWrapper-root { flex: 1 1 220px; }
 .admin-table { table-layout: fixed; }
 .admin-table td { overflow-wrap: anywhere; }
+.admin-service-card { min-width: 0; background: #fbfdff; }
+.admin-service-card .mantine-Group-root:last-child { flex-wrap: wrap; }
+.admin-instructions { margin: 0; padding-left: 20px; }
+.admin-instructions li + li { margin-top: 6px; }
+.admin-audit { overflow-x: auto; }
 
 .teacher-page > div:first-child h1 {
   color: #1d2c43;

@@ -49,9 +49,10 @@ docker save --output "$OUTPUT/images.tar" \
   sirena-112-smoke:2026.09.28
 
 cp "$ROOT/compose.yaml" "$ROOT/compose.offline.yaml" "$ROOT/.env.example" "$OUTPUT/"
-cp "$SCRIPT_DIR/stack.ps1" "$SCRIPT_DIR/stack.sh" "$OUTPUT/scripts/"
+cp "$SCRIPT_DIR/stack.ps1" "$SCRIPT_DIR/stack.sh" "$SCRIPT_DIR/admin_helper.py" "$OUTPUT/scripts/"
 cp "$SCRIPT_DIR/verify-bundle.ps1" "$SCRIPT_DIR/verify-bundle.sh" "$OUTPUT/scripts/"
 cp "$ROOT/docs/offline-full-stack.md" "$OUTPUT/docs/"
+cp "$ROOT/docs/admin-operations.md" "$OUTPUT/docs/"
 cp "$ROOT/infra/offline/models.env" "$OUTPUT/infra/offline/"
 cp -a "$MODEL_ROOT/." "$OUTPUT/models/"
 printf '2026.09.28\n' > "$OUTPUT/VERSION"
