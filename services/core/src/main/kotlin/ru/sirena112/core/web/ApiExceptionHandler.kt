@@ -6,6 +6,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.ServletWebRequest
+import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.servlet.NoHandlerFoundException
 import org.springframework.web.server.ResponseStatusException
 import ru.sirena112.core.domain.InvalidSessionTransitionException
@@ -97,6 +98,25 @@ class ApiExceptionHandler {
         status = HttpStatus.NOT_FOUND,
         code = "NOT_FOUND",
         message = "Ресурс не найден",
+        request = request
+    )
+
+    /**
+     * Неверный метод - ошибка клиента, а не поломка сервиса.
+     *
+     * Без этого обработчика запрос уходил в перехват Exception ниже и
+     * получал 500 "Внутренняя ошибка сервиса". Например, GET на
+     * /api/teacher/sessions, где есть только POST, выглядел как падение
+     * Core, и причину искали не там. Найдено при проверке форматов (#98).
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
+    fun handleMethodNotAllowed(
+        exception: HttpRequestMethodNotSupportedException,
+        request: ServletWebRequest
+    ): ResponseEntity<ApiError> = response(
+        status = HttpStatus.METHOD_NOT_ALLOWED,
+        code = "METHOD_NOT_ALLOWED",
+        message = "Метод ${exception.method} для этого адреса не поддерживается",
         request = request
     )
 

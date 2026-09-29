@@ -431,7 +431,94 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  # --- API расширений, только чтение. Задача #97 ---------------------------
+  # Версия в пути: несовместимое изменение появится как v2, а v1 продолжит
+  # работать, пока её не объявят устаревшей. Авторизация - сервисный токен
+  # расширения, отдельный от токена Media.
+  /api/ext/v1/meta:
+    get:
+      summary: Что отдаёт API расширений и какие у него ограничения
+      security: [{ extensionToken: [] }]
+      responses:
+        "200":
+          description: Версия, признак только для чтения и перечень ограничений
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtMeta" }
+        "401": { description: Токен не передан или не тот }
+        "503": { description: "Поверхность выключена: токен не настроен" }
+  /api/ext/v1/scenarios:
+    get:
+      summary: Сценарии без эталонного ввода
+      security: [{ extensionToken: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Страница сценариев
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtScenarioPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { description: Токен не передан или не тот }
+  /api/ext/v1/sessions:
+    get:
+      summary: Занятия без карточки и без обучающегося
+      security: [{ extensionToken: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Страница занятий
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtSessionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { description: Токен не передан или не тот }
+  /api/ext/v1/sessions/{sessionId}/result:
+    get:
+      summary: Баллы и критерии занятия без текста для человека
+      security: [{ extensionToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/SessionId" }
+      responses:
+        "200":
+          description: Результат занятия
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtResult" }
+        "401": { description: Токен не передан или не тот }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/ext/v1/sessions/{sessionId}/events:
+    get:
+      summary: События занятия без полезной нагрузки
+      security: [{ extensionToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/SessionId" }
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Страница событий
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtEventPage" }
+        "401": { description: Токен не передан или не тот }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
+  securitySchemes:
+    extensionToken:
+      type: http
+      scheme: bearer
+      description: |
+        Сервисный токен расширения из CORE_EXT_SERVICE_TOKEN. Приставка
+        Bearer обязательна. Токен отдельный от токена Media: отзыв доступа
+        расширению не должен ломать телефонию.
+
   parameters:
     SessionId:
       name: sessionId
@@ -1086,6 +1173,103 @@ components:
           type: array
           items: { $ref: "#/components/schemas/TrainingBoardSession" }
         analytics: { $ref: "#/components/schemas/TrainingAnalyticsSummary" }
+    ExtMeta:
+      type: object
+      additionalProperties: false
+      required: [apiVersion, readOnly, maxPageSize, limitations]
+      properties:
+        apiVersion: { type: string }
+        readOnly: { type: boolean }
+        classifierVersion: { type: [string, "null"] }
+        maxPageSize: { type: integer }
+        limitations: { type: array, items: { type: string } }
+        requestId: { type: [string, "null"] }
+    ExtPageMeta:
+      type: object
+      required: [page, size, total]
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer }
+        requestId: { type: [string, "null"] }
+    ExtScenario:
+      type: object
+      additionalProperties: false
+      required: [id, version, title, category, difficulty, classifierVersion, classifierCode, incidentType]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer }
+        title: { type: string }
+        category: { type: string }
+        difficulty: { type: string, enum: [BASIC, INTERMEDIATE, ADVANCED] }
+        classifierVersion: { type: string }
+        classifierCode: { type: string }
+        incidentType: { type: string }
+    ExtScenarioPage:
+      allOf:
+        - $ref: "#/components/schemas/ExtPageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/ExtScenario" } }
+    ExtSession:
+      type: object
+      additionalProperties: false
+      required: [id, scenarioId, mode, state, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        scenarioId: { type: string, format: uuid }
+        mode: { type: string }
+        state: { type: string }
+        groupId: { type: [string, "null"], format: uuid }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        endedAt: { type: [string, "null"], format: date-time }
+    ExtSessionPage:
+      allOf:
+        - $ref: "#/components/schemas/ExtPageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/ExtSession" } }
+    ExtCriterion:
+      type: object
+      additionalProperties: false
+      required: [code, passed, points, maxPoints]
+      properties:
+        code: { type: string }
+        passed: { type: boolean }
+        points: { type: number }
+        maxPoints: { type: number }
+    ExtResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, totalScore, maxScore, passed, criteria]
+      properties:
+        sessionId: { type: string, format: uuid }
+        classifierVersion: { type: [string, "null"] }
+        totalScore: { type: number }
+        maxScore: { type: number }
+        passed: { type: boolean }
+        criteria: { type: array, items: { $ref: "#/components/schemas/ExtCriterion" } }
+        requestId: { type: [string, "null"] }
+    ExtEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, sessionId, type, source, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        type: { type: string }
+        source: { type: string }
+        occurredAt: { type: string, format: date-time }
+    ExtEventPage:
+      allOf:
+        - $ref: "#/components/schemas/ExtPageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/ExtEvent" } }
     ApiError:
       type: object
       additionalProperties: false

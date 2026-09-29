@@ -36,6 +36,11 @@ core:
     media-token: ${CORE_MEDIA_SERVICE_TOKEN:}
   scenario-import:
     enabled: ${CORE_SCENARIO_IMPORT_ENABLED:false}
+  ext:
+    # Токен API расширений. Отдельный от токена Media намеренно: отзыв
+    # доступа расширению не должен ломать телефонию. Пусто - поверхность
+    # выключена и отвечает 503, а не открывается всем. См. задачу #97.
+    service-token: ${CORE_EXT_SERVICE_TOKEN:}
   environment: ${CORE_ENVIRONMENT:local}
   version: ${CORE_VERSION:dev}
   ai-base-url: ${CORE_AI_BASE_URL:http://localhost:8090}

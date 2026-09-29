@@ -1,29 +1,86 @@
 # Сирена-112
 
-Учебный симулятор для подготовки операторов дежурно-диспетчерских служб,
-взаимодействующих с системой-112 города Москвы. Проект разрабатывается для
-задачи №9 хакатона «Лидеры цифровой трансформации 2026».
+Учебный тренажёр для подготовки операторов дежурно-диспетчерских служб,
+взаимодействующих с системой-112 города Москвы. Задача №9 хакатона
+«Лидеры цифровой трансформации 2026». Команда «Ваш звонок важен для нас».
 
-## Цель первой вертикальной версии
+Курсант принимает вызов голосом или в карточном режиме, звонящего играет
+AI-абонент, система сверяет карточку с официальным классификатором и выдаёт
+объяснимый разбор по критериям. Всё работает **в изолированном контуре:
+без интернета и без видеокарты.**
 
-1. Преподаватель выбирает утверждённый сценарий и запускает занятие.
-2. Обучающийся фиксирует признаки, ответы, адрес и сведения о заявителе и
-   пострадавших; тип происшествия и службы вычисляет Kotlin Core.
-3. Core/AI сравнивает карточку с эталоном и формирует объяснимый отчёт.
-4. Преподаватель видит результат и журнал действий.
+## Что умеет система
 
-После стабилизации карточного режима добавляется голосовой вызов через
-локальный SIP-сервер.
+**Оператор-112 (STUDENT)**
+- карточка происшествия по официальному классификатору: 1281 позиция,
+  версия `046-2024-11-15`;
+- признаки, обязательные вопросы, адрес, заявитель, пострадавшие;
+- тип происшествия и состав служб вычисляет Core, а не выбирает курсант;
+- живой голосовой разговор с AI-абонентом через SIP;
+- таймер, живой статус назначенных служб ДДС, история попыток и обратная
+  связь преподавателя.
+
+**Преподаватель (TEACHER)**
+- жизненный цикл сценария: создание, утверждение, назначение группе;
+- импорт и экспорт сценариев с проверкой схемы и версии классификатора;
+- мониторинг занятия в реальном времени по WebSocket;
+- объяснимая оценка по 8 критериям и AI-разбор текста карточки;
+- аналитика группы, графики и карта ошибок;
+- экспертные комментарии и правки оценки с сохранением исходного отчёта;
+- отчёты в XLSX и PDF, запись звонка в WAV;
+- внешнее учебное табло без персональных данных.
+
+**Администратор (ADMIN)**
+- учётные записи, роли, группы, блокировка;
+- состояние Core, AI, Media, PostgreSQL и Asterisk, CPU/RAM/диск, ошибки;
+- запуск, остановка, перезапуск и обновление сервисов из интерфейса;
+- ежедневный backup базы с доказанным восстановлением;
+- восстановление занятия за 30 секунд после разрыва сети или падения Core,
+  профиль с двумя Core и автоматическим переключением;
+- метрики в формате Prometheus и отправка статуса во внешнюю систему.
+
+## Измеренные показатели
+
+| Показатель | Норматив | Результат |
+| --- | --- | --- |
+| Отклик API, p95 | ≤ 2 с | **0,14 с** |
+| Ход разговора с AI-абонентом | ≤ 1,2 с | **0,5 с** |
+| 20 занятий одновременно | ≤ 1,2 с | **0,67 с** на ход |
+| Восстановление после разрыва сети | ≤ 30 с | **0,016 с** на переподключение |
+| Переключение на второй Core | ≤ 30 с | **мгновенно**, через gateway |
+| Распознавание 3,3 с речи | — | **0,4 с** |
+| Синтез ответа | — | **0,2 с** |
+
+Полная матрица требований с доказательствами:
+[`docs/requirements-coverage.md`](docs/requirements-coverage.md).
 
 ## Архитектура
+
+```text
+Браузер ──TLS──> Web (React + nginx)
+                   │
+                   ▼
+               Kotlin Core ──> PostgreSQL ──> ежедневный backup
+                │    │
+                │    └──> Python AI: Vosk, Piper, AI-абонент, оценка
+                │              ▲
+                │              │ бинарный WebSocket, PCM
+                └──> Go Media ─┘──> Asterisk: SIP, ARI, RTP
+                        └──> запись занятия в WAV
+
+Monitor: /metrics (Prometheus), /status, /push
+Расширения: /api/ext/v1, версионированный API только для чтения
+```
 
 - `apps/web` — единый React-интерфейс с маршрутами `/admin`, `/teacher`, `/student`;
 - `services/core` — Kotlin Core API, владелец бизнес-состояния и PostgreSQL;
 - `services/media` — Go Media Gateway, SIP/ARI/RTP и потоковая обработка аудио;
 - `services/ai` — локальные AI, STT и TTS на Python;
-- `infra` — Docker Compose, PostgreSQL и конфигурация Asterisk;
+- `infra` — Docker Compose, PostgreSQL, Asterisk, мониторинг;
 - `contracts` — OpenAPI, форматы событий и схема сценария;
-- `docs` — архитектура, требования и журнал решений.
+- `docs` — архитектура, требования, замеры и журнал решений.
+
+Подробно: [`docs/architecture.md`](docs/architecture.md).
 
 ## Правила взаимодействия
 
@@ -33,44 +90,15 @@
 - В голосовом режиме Go напрямую обменивается с Python PCM-аудио и метаданными
   по бинарному WebSocket; Kotlin аудио не проксирует.
 - Все интеграционные сообщения содержат `eventId`, `sessionId`, `type`, `timestamp` и `payload`.
-- Итоговая конфигурация должна работать в изолированном локальном контуре.
+- Межсервисные вызовы защищены отдельными Bearer-токенами.
+- Вся конфигурация работает в изолированном локальном контуре.
 
 Правила веток и Pull Request описаны в [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## Обязательные проверки Pull Request
+## Быстрый старт
 
-Перед merge каждый Pull Request должен пройти один и тот же полный набор
-проверок; фильтры по путям намеренно не используются, чтобы изменение любого
-сервиса не могло пропустить регрессию общего контракта:
-
-- `validate` (workflow `branch-name`) — формат имени ветки; имя сохранено для действующей защиты main;
-- `core / test` — unit- и integration-тесты Kotlin Core на Java 17;
-- `ai / test` — Python-тесты с dev-зависимостями;
-- `web / test-build` — typecheck, тесты и production build Web;
-- `media / test-build` — тесты, `go vet`, бинарник, Dockerfile Media,
-  `docker compose config` и сборка Asterisk без публикации образов;
-- `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев.
-- `demo / smoke` — два полных занятия `1050602` через реальные Core и AI.
-
-Дополнительно `demo / compose` собирает и проверяет отдельный Docker Compose для
-карточного демо; пока этот новый check не добавлен в required status checks.
-
-Имена jobs уникальны между workflows. Все перечисленные check names должны быть добавлены как required status checks
-в правила защиты ветки `main`. Workflow запускаются для Pull Request и push в
-`main`, используют кэши только для зависимостей и отменяют устаревший запуск для
-той же ветки.
-
-## Локальная инфраструктура
-
-Единый автономный стенд Web + Core + AI + Media + Asterisk + PostgreSQL +
-мониторинг, подготовка `offline-bundle`, команды Windows/Ubuntu, smoke-тесты и
-диагностика описаны в [`docs/offline-full-stack.md`](docs/offline-full-stack.md).
-Рабочее место администратора, безопасные команды и восстановление описаны в
-[`docs/admin-operations.md`](docs/admin-operations.md).
-Проверяемый 30-секундный reconnect, два Core и границы деградации описаны в
-[`docs/resilience.md`](docs/resilience.md).
-
-После подготовки образов и моделей локальный запуск на Windows выполняется так:
+Полный автономный стенд Web + Core + AI + Media + Asterisk + PostgreSQL +
+мониторинг. Windows:
 
 ```powershell
 .\scripts\stack.ps1 init
@@ -79,30 +107,74 @@
 .\scripts\stack.ps1 smoke
 ```
 
-На Ubuntu используйте те же действия через `bash scripts/stack.sh`. Штатный
-`start` не собирает и не скачивает ничего: используются только заранее
-загруженные образы и локальные модели. PostgreSQL работает в именованном томе и
-переживает `restart`/`stop`.
+Ubuntu: те же действия через `bash scripts/stack.sh`. Штатный `start` ничего
+не собирает и не скачивает: используются заранее загруженные образы и
+локальные модели. PostgreSQL работает в именованном томе и переживает
+`restart`/`stop`.
 
-Asterisk (SIP + ARI): [`infra/asterisk/README.md`](infra/asterisk/README.md).  
-Media Gateway: [`services/media/README.md`](services/media/README.md), контракт [`contracts/media-core.md`](contracts/media-core.md).
+Шифрованный доступ из браузера:
 
-Карточное демо Core + AI + Web запускается отдельно от голосового стека одной
-командой PowerShell (Docker Desktop должен быть запущен):
+```bash
+sh scripts/make_tls_cert.sh
+docker compose -f compose.yaml -f compose.tls.yaml up -d
+# https://127.0.0.1:8443
+```
+
+Карточное демо Core + AI + Web одной командой:
 
 ```powershell
 .\scripts\demo-card.ps1 start
 ```
 
-После успешного smoke откройте `http://localhost:5173/teacher` и
-`http://localhost:5173/student`. Остановка: `.\scripts\demo-card.ps1 stop`.
-Команда останавливает только контейнеры `sirena-card`; данные и контейнеры
-голосового стека не затрагиваются. Подробности и запуск без Docker — в
-[`docs/demo-1050602.md`](docs/demo-1050602.md).
+Затем `http://localhost:5173/teacher` и `http://localhost:5173/student`.
+Подробности — [`docs/demo-1050602.md`](docs/demo-1050602.md).
 
-## Ближайшая контрольная точка
+## Проверяемость
 
-Сквозной карточный сценарий `1050602` доступен через реальные Core, AI и Web.
-Команды запуска, автоматическая проверка и сценарий показа — в
-[`docs/demo-1050602.md`](docs/demo-1050602.md). Отдельно развивается SIP-вызов с
-возвратом тестового аудио.
+Каждый Pull Request проходит полный набор обязательных проверок без фильтров
+по путям, чтобы изменение любого сервиса не могло пропустить регрессию
+общего контракта:
+
+- `validate` — формат имени ветки;
+- `core / test` — unit- и integration-тесты Kotlin Core на Java 17;
+- `ai / test` — Python-тесты;
+- `web / test-build` — typecheck, тесты и production build Web;
+- `media / test-build` — тесты, `go vet`, бинарник, Dockerfile Media,
+  `docker compose config` и сборка Asterisk;
+- `contracts / validate` — OpenAPI, JSON Schema, каталог и примеры сценариев;
+- `demo / smoke` — два полных занятия `1050602` через реальные Core и AI;
+- `demo / compose` — сборка и проверка карточного Docker Compose;
+- `core / postgres-recovery` — восстановление состояния после перезапуска;
+- `demo / resilience` — разрыв сети на 30 с, отказ и переключение Core,
+  падение AI, Media и PostgreSQL.
+
+Запускаемые проверки на живом стенде:
+
+| Что | Команда |
+| --- | --- |
+| сквозное занятие | `python scripts/smoke_card_1050602.py` |
+| голосовой контракт | `python scripts/smoke_voice_contract.py` |
+| нагрузка голосового тракта | `python scripts/load_voice_stack.py` |
+| форматы данных | `python scripts/check_formats.py` |
+| backup и восстановление | `python scripts/check_backup_restore.py` |
+| TLS | `python scripts/check_tls.py` |
+| отказоустойчивость | `python scripts/check_resilience.py` |
+| минимизация персональных данных | `python scripts/check_personal_data.py` |
+| API расширений | `python scripts/ext_api_client.py` |
+| покрытие требований | `python scripts/check_coverage.py` |
+
+## Документация
+
+| Тема | Документ |
+| --- | --- |
+| Требования и покрытие | [`requirements.md`](docs/requirements.md), [`requirements-coverage.md`](docs/requirements-coverage.md) |
+| Архитектура и решения | [`architecture.md`](docs/architecture.md), [`decisions.md`](docs/decisions.md) |
+| Демо и сценарии | [`demo-1050602.md`](docs/demo-1050602.md), [`scenario-workflow.md`](docs/scenario-workflow.md), [`scenario-import-export-77.md`](docs/scenario-import-export-77.md) |
+| Голос | [`voice-two-turns.md`](docs/voice-two-turns.md), [`voice-shipping-stack.md`](docs/voice-shipping-stack.md), [`voice-contract-68.md`](docs/voice-contract-68.md), [`voice-ws-for-media.md`](docs/voice-ws-for-media.md), [`voice-readiness.md`](docs/voice-readiness.md) |
+| AI и оценка | [`ai-benchmark.md`](docs/ai-benchmark.md), [`ai-text-review.md`](docs/ai-text-review.md), [`ai-load.md`](docs/ai-load.md) |
+| Обучение и аналитика | [`training-analytics-75.md`](docs/training-analytics-75.md), [`training-history.md`](docs/training-history.md) |
+| Безопасность | [`auth-rbac.md`](docs/auth-rbac.md), [`tls.md`](docs/tls.md), [`security-data-review.md`](docs/security-data-review.md), [`security-recordings-task.md`](docs/security-recordings-task.md) |
+| Эксплуатация | [`offline-full-stack.md`](docs/offline-full-stack.md), [`resilience.md`](docs/resilience.md), [`admin-operations.md`](docs/admin-operations.md), [`backup-restore.md`](docs/backup-restore.md), [`monitoring-integration.md`](docs/monitoring-integration.md), [`media-load.md`](docs/media-load.md) |
+| Данные и интеграции | [`format-matrix.md`](docs/format-matrix.md), [`postgres-core.md`](docs/postgres-core.md), [`extension-api.md`](docs/extension-api.md), [`contracts/`](contracts/README.md) |
+| Сервисы | [`core`](services/core/README.md), [`ai`](services/ai/README.md), [`media`](services/media/README.md), [`web`](apps/web/README.md), [`asterisk`](infra/asterisk/README.md) |
+| Презентация | [`presentation-content.md`](docs/presentation-content.md) |
