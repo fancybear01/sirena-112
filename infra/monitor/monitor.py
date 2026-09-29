@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import socket
+import threading
 import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -58,15 +59,64 @@ def _asterisk_headers() -> dict[str, str]:
     return {"Authorization": "Basic " + base64.b64encode(raw).decode("ascii")}
 
 
+class AlertTracker:
+    """Keeps bounded-recovery failures visible between health polls."""
+
+    def __init__(self, failure_threshold: int = 3):
+        self.failure_threshold = max(1, failure_threshold)
+        self.failures: dict[str, int] = {}
+        self.first_failure: dict[str, str] = {}
+        self.lock = threading.Lock()
+
+    def update(self, checks: list[dict]) -> list[dict]:
+        alerts = []
+        with self.lock:
+            current_names = {str(item.get("name")) for item in checks}
+            for stale in set(self.failures) - current_names:
+                self.failures.pop(stale, None)
+                self.first_failure.pop(stale, None)
+            for item in checks:
+                name = str(item.get("name"))
+                if item.get("status") == "UP":
+                    self.failures.pop(name, None)
+                    self.first_failure.pop(name, None)
+                    continue
+                count = self.failures.get(name, 0) + 1
+                self.failures[name] = count
+                self.first_failure.setdefault(name, datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+                exhausted = count >= self.failure_threshold
+                alerts.append({
+                    "component": name,
+                    "severity": "critical" if exhausted else "warning",
+                    "recovery": "FAILED" if exhausted else "PENDING",
+                    "failureCount": count,
+                    "firstFailureAt": self.first_failure[name],
+                    "message": (
+                        f"{name}: автоматическое восстановление не подтверждено после {count} проверок; "
+                        "нужны журнал и ручная диагностика."
+                        if exhausted else
+                        f"{name}: обнаружен отказ, ожидается автоматическое восстановление."
+                    ),
+                })
+        return alerts
+
+
+ALERTS = AlertTracker(int(os.getenv("MONITOR_RECOVERY_FAILURE_THRESHOLD", "3")))
+
+
 def status_payload() -> dict:
     checks = [
         _tcp_check("postgres", "postgres", 5432),
         _http_check("asterisk", "http://asterisk:8088/ari/asterisk/info", "", _asterisk_headers()),
         _http_check("ai", "http://ai:8090/health", "ok"),
         _http_check("media", "http://media:8091/ready", "ready"),
-        _http_check("core", "http://core:8080/actuator/health/readiness", "UP"),
+        _http_check("core", os.getenv("CORE_STATUS_URL", "http://core:8080/actuator/health/readiness"), "UP"),
         _http_check("web", "http://web:8080/health", "ok"),
     ]
+    for name, variable in (("core-primary", "CORE_PRIMARY_STATUS_URL"),
+                           ("core-secondary", "CORE_SECONDARY_STATUS_URL")):
+        if os.getenv(variable):
+            checks.append(_http_check(name, os.environ[variable], "UP"))
     # ARI returns build/system metadata rather than a status field. A successful
     # authenticated JSON response is the readiness signal.
     asterisk = next(item for item in checks if item["name"] == "asterisk")
@@ -78,6 +128,7 @@ def status_payload() -> dict:
         "service": "sirena-monitor",
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "checks": checks,
+        "alerts": ALERTS.update(checks),
     }
 
 

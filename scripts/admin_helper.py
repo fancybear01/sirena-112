@@ -214,6 +214,10 @@ def build_status(monitor_url: str, metrics: SystemMetrics | None = None,
             errors.append({"component": name, "message": reason})
     if monitor_error:
         errors.insert(0, {"component": "monitor", "message": monitor_error})
+    for alert in monitor.get("alerts", []):
+        if isinstance(alert, dict) and alert.get("recovery") == "FAILED":
+            errors.append({"component": f"{alert.get('component', 'unknown')}/recovery",
+                           "message": str(alert.get("message") or "Автовосстановление не подтверждено.")})
     if last_action and last_action.get("outcome") == "FAILED":
         errors.append({"component": "control", "message": str(last_action.get("message"))})
     return {

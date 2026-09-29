@@ -67,6 +67,8 @@
 диагностика описаны в [`docs/offline-full-stack.md`](docs/offline-full-stack.md).
 Рабочее место администратора, безопасные команды и восстановление описаны в
 [`docs/admin-operations.md`](docs/admin-operations.md).
+Проверяемый 30-секундный reconnect, два Core и границы деградации описаны в
+[`docs/resilience.md`](docs/resilience.md).
 
 После подготовки образов и моделей локальный запуск на Windows выполняется так:
 
