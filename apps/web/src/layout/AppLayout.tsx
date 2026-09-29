@@ -9,7 +9,7 @@ export function AppLayout() {
   return (
     <AppShell header={{ height: 68 }} padding="xl">
       <AppShell.Header className="shell-header">
-        <Group h="100%" px="xl" justify="space-between" wrap="nowrap">
+        <Group className="shell-header__inner" h="100%" px="xl" justify="space-between" wrap="nowrap">
           <Brand />
           <Button variant="subtle" color="gray" size="sm" onClick={() => void auth.logout()}>Выйти</Button>
         </Group>

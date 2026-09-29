@@ -21,7 +21,7 @@ const users: Record<AuthRole, CurrentUser> = {
 };
 
 const headings: Record<AuthRole, string> = {
-  ADMIN: 'Пользователи и группы',
+  ADMIN: 'Контроль локального комплекса',
   TEACHER: 'Сценарии',
   STUDENT: 'Моё задание',
 };

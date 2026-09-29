@@ -65,6 +65,8 @@
 Единый автономный стенд Web + Core + AI + Media + Asterisk + PostgreSQL +
 мониторинг, подготовка `offline-bundle`, команды Windows/Ubuntu, smoke-тесты и
 диагностика описаны в [`docs/offline-full-stack.md`](docs/offline-full-stack.md).
+Рабочее место администратора, безопасные команды и восстановление описаны в
+[`docs/admin-operations.md`](docs/admin-operations.md).
 
 После подготовки образов и моделей локальный запуск на Windows выполняется так:
 

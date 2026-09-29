@@ -288,6 +288,40 @@ services:
     tmpfs:
       - /tmp
 
+  # Ежедневная резервная копия базы. Задача #90.
+  # Расписание сделано простым циклом, а не cron: в автономном контуре
+  # меньше движущихся частей, а состояние последнего запуска всё равно
+  # лежит файлом, который читает администратор.
+  postgres-backup:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-sirena112}
+      POSTGRES_USER: ${POSTGRES_USER:-sirena112}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-sirena112-local}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_MAX_MB: ${BACKUP_MAX_MB:-2048}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./scripts/backup_postgres.sh:/usr/local/bin/backup.sh:ro
+      - postgres-backups:/backups
+    # Первая копия снимается сразу после старта: иначе до следующих суток
+    # администратор не знает, работает ли backup вообще.
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          sh /usr/local/bin/backup.sh || echo "backup: неудачный запуск, см. /backups/last-backup.json"
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
 volumes:
   postgres-data:
+  postgres-backups:
   voice-recordings:

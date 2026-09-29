@@ -30,6 +30,7 @@ describe('TrainingHistoryPanel', () => {
     vi.stubGlobal('fetch', request);
     render(<MantineProvider><TrainingHistoryPanel role="teacher" /></MantineProvider>);
     expect(await screen.findByText(/Эталон классификатора: 1050602/)).toBeInTheDocument();
+    expect(screen.getByText(/Оценено$/)).toBeInTheDocument();
     expect(screen.getByText(/Исходная оценка: 60/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Комментарий обучающемуся'), 'Повторите алгоритм');
     await userEvent.click(screen.getByRole('button', { name: 'Добавить комментарий' }));

@@ -14,6 +14,15 @@ type Workflow = {
 type Student = { id: string; username: string; displayName: string };
 type SourceScenario = Record<string, unknown> & { id: string; title: string };
 const http = createHttpClient(apiConfig.baseUrl);
+const difficultyOptions = [
+  { value: 'BASIC', label: 'Базовая' },
+  { value: 'INTERMEDIATE', label: 'Средняя' },
+  { value: 'ADVANCED', label: 'Высокая' },
+];
+const workflowStatusLabels: Record<Workflow['status'], string> = { DRAFT: 'Черновик', APPROVED: 'Утверждён' };
+const workflowSourceLabels: Record<Workflow['source'], string> = {
+  MANUAL: 'Вручную', AI: 'AI', COPY: 'Копия', STUDENT: 'Предложение обучающегося',
+};
 
 export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }) {
   const [items, setItems] = useState<Workflow[]>([]);
@@ -31,6 +40,7 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const selected = items.find((item) => item.id === selectedId);
 
   const reload = useCallback(async () => {
@@ -48,7 +58,11 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
     setMyGroupId(me.groupId);
   }, []);
 
-  useEffect(() => { void reload().catch((cause) => setError(getApiErrorMessage(cause, 'Не удалось загрузить сценарии.'))); }, [reload]);
+  useEffect(() => {
+    void reload()
+      .catch((cause) => setError(getApiErrorMessage(cause, 'Не удалось загрузить сценарии.')))
+      .finally(() => setLoading(false));
+  }, [reload]);
 
   function choose(id: string | null, list = items) {
     setSelectedId(id);
@@ -79,25 +93,26 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
     return value as Record<string, unknown>;
   }
 
-  return <Paper withBorder radius="lg" p="xl">
+  return <Paper className="scenario-workflow" withBorder radius="lg" p="xl" aria-busy={loading || busy}>
     <Stack gap="md">
       <div><Title order={2}>Создание и назначение сценариев</Title>
         <Text c="dimmed" size="sm">Эталон проверяется по официальному классификатору перед утверждением. Активную версию изменить нельзя.</Text></div>
       {error && <Alert color="red" role="alert">{error}</Alert>}
-      {message && <Alert color="teal" role="status">{message}</Alert>}
-      <Group align="end">
+      {message && <Alert color="teal" role="status" aria-live="polite">{message}</Alert>}
+      {loading && <Text role="status" aria-live="polite">Загружаем версии сценариев…</Text>}
+      <Group className="workflow-controls" align="end">
         <Select label="Категория для AI" searchable value={category} onChange={(value) => value && setCategory(value as ScenarioCategory)}
-          data={scenarioCategories.map((value) => ({ value, label: getScenarioCategoryLabel(value) }))} />
+          data={scenarioCategories.map((value) => ({ value, label: getScenarioCategoryLabel(value) }))} disabled={loading || busy} />
         <Select label="Сложность" value={difficulty} onChange={(value) => value && setDifficulty(value as ScenarioDifficulty)}
-          data={['BASIC', 'INTERMEDIATE', 'ADVANCED']} />
-        <NumberInput label="Вариант" min={0} value={seed} onChange={setSeed} w={100} />
+          data={difficultyOptions} disabled={loading || busy} />
+        <NumberInput className="workflow-seed" label="Вариант" min={0} value={seed} onChange={setSeed} disabled={loading || busy} />
         <Button loading={busy} onClick={() => void perform(() => http.request<Workflow>('/api/teacher/scenarios/workflow/drafts/generate', {
           method: 'POST', body: { category, difficulty, seed: Number(seed) || 0 },
         }), 'AI предложил черновик. Проверьте и утвердите его.')}>Получить черновик от AI</Button>
       </Group>
-      <Group align="end">
-        <Select label="Готовый сценарий для копии" searchable w={320} value={sourceId} onChange={setSourceId}
-          data={sources.map((item) => ({ value: item.id, label: item.title }))} />
+      <Group className="workflow-controls" align="end">
+        <Select className="workflow-source" label="Готовый сценарий для копии" searchable value={sourceId} onChange={setSourceId}
+          data={sources.map((item) => ({ value: item.id, label: item.title }))} disabled={loading || busy} />
         <Button variant="light" disabled={!sourceId} loading={busy} onClick={() => void perform(() => {
           const source = sources.find((item) => item.id === sourceId);
           if (!source) throw new Error('Выберите сценарий');
@@ -107,16 +122,17 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
         }, 'Создан новый черновик.')}>Создать черновик-копию</Button>
       </Group>
       <Select label="Версия в работе" searchable value={selectedId} onChange={(id) => choose(id)}
-        data={items.map((item) => ({ value: item.id, label: `${item.scenario.title ?? item.id} · v${item.version} · ${item.status}` }))} />
+        data={items.map((item) => ({ value: item.id, label: `${item.scenario.title ?? item.id} · версия ${item.version} · ${workflowStatusLabels[item.status]}` }))}
+        disabled={loading || busy} />
       {selected && <>
-        <Group><Badge color={selected.status === 'APPROVED' ? 'teal' : 'orange'}>{selected.status}</Badge>
-          <Text size="sm">Версия {selected.version}, ревизия {selected.revision}, источник {selected.source}</Text></Group>
+        <Group><Badge color={selected.status === 'APPROVED' ? 'teal' : 'orange'}>{workflowStatusLabels[selected.status]}</Badge>
+          <Text size="sm">Версия {selected.version}, ревизия {selected.revision}, источник: {workflowSourceLabels[selected.source]}</Text></Group>
         <Textarea label="Сценарий и эталон (JSON)" description="Можно исправить название, профиль, норматив, признаки, ответы и критерии. Службы должны соответствовать классификатору."
           autosize minRows={10} maxRows={22} value={editor} onChange={(event) => setEditor(event.currentTarget.value)}
           readOnly={selected.status !== 'DRAFT'} />
         <Textarea label="Комментарий преподавателя" value={comment} onChange={(event) => setComment(event.currentTarget.value)}
           readOnly={selected.status !== 'DRAFT'} />
-        <Group>
+        <Group className="workflow-actions">
           {selected.status === 'DRAFT' ? <>
             <Button loading={busy} onClick={() => void perform(() => http.request<Workflow>(`/api/teacher/scenarios/workflow/${selected.id}`, {
               method: 'PUT', body: { scenario: parseEditor(), comment, expectedRevision: selected.revision },
@@ -133,7 +149,7 @@ export function ScenarioWorkflowPanel({ onApproved }: { onApproved: () => void }
           </> : <Button loading={busy} variant="light" onClick={() => void perform(() => http.request<Workflow>(
             `/api/teacher/scenarios/workflow/${selected.id}/fork`, { method: 'POST' }), 'Создана новая версия-черновик.')}>Новая версия</Button>}
         </Group>
-        {selected.status === 'APPROVED' && <Group align="end">
+        {selected.status === 'APPROVED' && <Group className="workflow-controls" align="end">
           <Select label="Студент группы" value={studentId} onChange={setStudentId}
             data={students.map((student) => ({ value: student.id, label: `${student.displayName} (${student.username})` }))} />
           <Button loading={busy} disabled={!studentId} onClick={() => void perform(async () => {

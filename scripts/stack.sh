@@ -2,7 +2,27 @@
 set -euo pipefail
 
 ACTION="${1:-status}"
-BUNDLE_PATH="${2:-}"
+shift || true
+SERVICE='all'
+BUNDLE_PATH=''
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --service)
+      [[ $# -ge 2 ]] || { echo 'ERROR: --service требует значение' >&2; exit 1; }
+      SERVICE="$2"
+      shift 2
+      ;;
+    *)
+      [[ "$ACTION" == 'update' && -z "$BUNDLE_PATH" ]] || { echo "ERROR: неизвестный аргумент $1" >&2; exit 1; }
+      BUNDLE_PATH="$1"
+      shift
+      ;;
+  esac
+done
+case "$SERVICE" in
+  all|core|ai|media|postgres|asterisk|web|monitor) ;;
+  *) echo "ERROR: неизвестный компонент $SERVICE" >&2; exit 1 ;;
+esac
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$ROOT/.env"
@@ -12,6 +32,22 @@ COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$ROOT/compose.yaml" -f "$ROOT
 fail() {
   echo "ERROR: $*" >&2
   exit 1
+}
+
+admin_helper_ready() {
+  curl -fsS --max-time 1 http://127.0.0.1:8100/health 2>/dev/null | grep -q '"status":"UP"'
+}
+
+start_admin_helper() {
+  admin_helper_ready && return
+  command -v python3 >/dev/null 2>&1 || fail 'Python 3 нужен локальному backend/helper админки'
+  nohup python3 "$ROOT/scripts/admin_helper.py" >"${TMPDIR:-/tmp}/sirena-admin-helper.log" 2>&1 &
+  local attempt
+  for attempt in {1..20}; do
+    sleep 0.25
+    admin_helper_ready && return
+  done
+  fail 'Локальный backend/helper админки не запустился на 127.0.0.1:8100'
 }
 
 random_secret() {
@@ -117,19 +153,34 @@ case "$ACTION" in
     doctor
     ;;
   start)
+    start_admin_helper
     doctor
-    "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never
-    echo 'Стенд готов: Web http://localhost:5173, мониторинг http://localhost:8099/status'
+    if [[ "$SERVICE" == 'all' ]]; then
+      "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never
+    else
+      "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never --no-deps "$SERVICE"
+    fi
+    echo 'Стенд готов: Web http://localhost:5173, мониторинг http://localhost:8099/status, admin helper http://localhost:8100'
     ;;
   stop)
     load_env
-    "${COMPOSE[@]}" down
-    echo 'Контейнеры остановлены; том PostgreSQL сохранён.'
+    if [[ "$SERVICE" == 'all' ]]; then
+      "${COMPOSE[@]}" down
+      echo 'Контейнеры остановлены; том PostgreSQL сохранён. Admin helper оставлен для повторного запуска.'
+    else
+      "${COMPOSE[@]}" stop "$SERVICE"
+    fi
     ;;
   restart)
+    start_admin_helper
     load_env
-    "${COMPOSE[@]}" restart
-    "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never
+    if [[ "$SERVICE" == 'all' ]]; then
+      "${COMPOSE[@]}" restart
+      "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never
+    else
+      "${COMPOSE[@]}" restart "$SERVICE"
+      "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --no-build --pull never --no-deps "$SERVICE"
+    fi
     ;;
   status)
     load_env
@@ -147,6 +198,8 @@ case "$ACTION" in
     "${COMPOSE[@]}" logs --no-color --tail 200
     ;;
   update)
+    [[ "$SERVICE" == 'all' ]] || fail 'Пакетное обновление выполняется только для всего комплекса'
+    start_admin_helper
     load_env
     [[ -n "$BUNDLE_PATH" ]] || BUNDLE_PATH="$ROOT/offline-bundle/images.tar"
     [[ -f "$BUNDLE_PATH" ]] || fail "Не найден $BUNDLE_PATH"

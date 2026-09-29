@@ -139,7 +139,7 @@ describe('teacher scenario flow', () => {
     expect(screen.getByRole('heading', { name: 'ДТП с пострадавшими', level: 2 })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
-    expect(await screen.findByText('ACTIVE')).toBeInTheDocument();
+    expect(await screen.findByText('Активна')).toBeInTheDocument();
     const scenarioInfo = screen.getByRole('region', { name: 'Информация о сценарии' });
     expect(within(scenarioInfo).getByRole('heading', { name: 'ДТП с пострадавшими' })).toBeInTheDocument();
     expect(within(scenarioInfo).getByText('Дорожное происшествие')).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe('teacher scenario flow', () => {
     expect(screen.getByText('Идентификатор сессии')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Завершить занятие' }));
-    expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
+    expect(await screen.findByText('Завершена')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Новое занятие' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Открыть сценарий «Задымление в мусоропроводе»' }));
@@ -264,7 +264,7 @@ describe('teacher scenario flow', () => {
     await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
 
     expect(await screen.findByText(/Оценка: 84 из 100/)).toBeInTheDocument();
-    expect(screen.getByText('SCORED')).toBeInTheDocument();
+    expect(screen.getByText('Оценена')).toBeInTheDocument();
     expect(await screen.findByText('Занятий: 3')).toBeInTheDocument();
     expect(getAnalytics).toHaveBeenCalledTimes(2);
   });
@@ -284,27 +284,27 @@ describe('teacher scenario flow', () => {
     renderTeacher();
     await screen.findByRole('heading', { name: 'Задымление в мусоропроводе', level: 2 });
     await user.click(screen.getByRole('button', { name: 'Запустить занятие' }));
-    await screen.findByText('ACTIVE');
+    await screen.findByText('Активна');
     const sessionId = document.querySelector('.session-id')?.textContent;
     expect(sessionId).toBeTruthy();
 
     cleanup();
     renderTeacher(createTeacherMockApi({ delayMs: 0 }));
-    expect(await screen.findByText('ACTIVE')).toBeInTheDocument();
+    expect(await screen.findByText('Активна')).toBeInTheDocument();
     expect(screen.getByText(sessionId!)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Завершить занятие' }));
-    await screen.findByText('COMPLETED');
+    await screen.findByText('Завершена');
     cleanup();
     renderTeacher(createTeacherMockApi({ delayMs: 0 }));
-    expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
+    expect(await screen.findByText('Завершена')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Новое занятие' }));
     expect(await screen.findByRole('button', { name: 'Запустить занятие' })).toBeInTheDocument();
     cleanup();
     renderTeacher(createTeacherMockApi({ delayMs: 0 }));
     expect(await screen.findByRole('button', { name: 'Запустить занятие' })).toBeInTheDocument();
-    expect(screen.queryByText('COMPLETED')).not.toBeInTheDocument();
+    expect(screen.queryByText('Завершена')).not.toBeInTheDocument();
   });
 
   it('shows an empty state', async () => {
