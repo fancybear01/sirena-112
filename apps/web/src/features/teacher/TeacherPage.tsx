@@ -16,7 +16,7 @@ import {
 import { IconAlertCircle, IconClock, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import { getApiErrorMessage } from '../../api/errors';
 import { getScenarioCategoryLabel } from '../../api/scenarioLabels';
-import type { ServiceStatus } from '../../api/types';
+import type { ServiceStatus, SessionState } from '../../api/types';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/StatePlaceholder';
 import { teacherApi, teacherSessionEvents } from './api/teacherApi';
 import { TeacherAnalytics } from './TeacherAnalytics';
@@ -73,6 +73,17 @@ const liveStateLabels: Record<TeacherLiveConnectionState, string> = {
   connected: 'Онлайн',
   reconnecting: 'Переподключение',
   polling: 'Опрос Core',
+};
+
+const sessionStateLabels: Record<SessionState, string> = {
+  CREATED: 'Создана',
+  READY: 'Готова',
+  RINGING: 'Вызов',
+  ACTIVE: 'Активна',
+  COMPLETED: 'Завершена',
+  SCORING: 'Оценивается',
+  SCORED: 'Оценена',
+  FAILED: 'Ошибка',
 };
 
 function formatTimestamp(value: string) {
@@ -318,7 +329,7 @@ export function TeacherPage({
 
   return (
     <Stack className="teacher-page" gap="xl">
-      <Group justify="space-between" align="flex-start">
+      <Group className="teacher-page__header" justify="space-between" align="flex-start">
         <div>
           <Title order={1}>Сценарии</Title>
           <Text c="dimmed" mt={5}>Выберите сценарий и запустите учебную сессию.</Text>
@@ -400,7 +411,7 @@ export function TeacherPage({
               <div className={`teacher-panel-slot${session ? ' teacher-panel-slot--session' : ''}`}>
                 {session ? (
                   <Paper className="session-panel" withBorder radius="lg" p="xl">
-                  <Group justify="space-between" mb="xl" align="flex-start">
+                  <Group className="session-panel__header" justify="space-between" mb="xl" align="flex-start">
                     <Text fw={650}>Учебная сессия</Text>
                     <Group gap="xs" justify="flex-end">
                       <Badge
@@ -414,7 +425,7 @@ export function TeacherPage({
                         variant="light"
                         size="lg"
                       >
-                        {session.state}
+                        {sessionStateLabels[session.state]}
                       </Badge>
                     </Group>
                   </Group>
@@ -481,7 +492,7 @@ export function TeacherPage({
                       <Stack gap="sm">
                         {serviceAssignments.map((assignment) => (
                           <article className="teacher-service" key={assignment.id}>
-                            <Group justify="space-between" align="flex-start" wrap="nowrap">
+                            <Group className="teacher-service__header" justify="space-between" align="flex-start" wrap="nowrap">
                               <div>
                                 <Text fw={650}>{assignment.displayName}</Text>
                                 <Text size="xs" c="dimmed" mt={3}>
@@ -563,7 +574,7 @@ export function TeacherPage({
                     {selectedScenario.profile}
                   </Text>
                   <Divider my="xl" />
-                  <Group justify="space-between">
+                  <Group className="scenario-details__meta" justify="space-between">
                     <div>
                       <Text size="xs" c="dimmed">Категория</Text>
                       <Text size="sm" fw={600} mt={3}>{getScenarioCategoryLabel(selectedScenario.category)}</Text>

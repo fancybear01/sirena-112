@@ -37,13 +37,13 @@ export function LoginPage() {
         <Text c="dimmed" size="sm" mt={6} mb="xl">
           {auth.status === 'loading' ? 'Проверяем текущую сессию…' : 'Используйте свою учётную запись'}
         </Text>
-        <form onSubmit={signIn}>
+        <form onSubmit={signIn} aria-busy={busy}>
           <Stack gap="md">
             <TextInput label="Логин" autoComplete="username" value={username}
               onChange={(event) => setUsername(event.currentTarget.value)} required disabled={auth.status === 'loading'} />
             <PasswordInput label="Пароль" autoComplete="current-password" value={password}
               onChange={(event) => setPassword(event.currentTarget.value)} required disabled={auth.status === 'loading'} />
-            {error && <Text c="red" role="alert">{error}</Text>}
+            {error && <Text c="red" role="alert" aria-live="assertive">{error}</Text>}
             <Button type="submit" loading={busy} disabled={auth.status === 'loading'}>Войти</Button>
           </Stack>
         </form>

@@ -48,6 +48,11 @@ type History = {
   attempts: Attempt[];
 };
 
+const sessionStateLabels: Record<string, string> = {
+  CREATED: 'Создано', READY: 'Готово', RINGING: 'Вызов', ACTIVE: 'Идёт занятие', COMPLETED: 'Завершено',
+  SCORING: 'Оценивается', SCORED: 'Оценено', FAILED: 'Ошибка',
+};
+
 function dateTime(value: string): string {
   return new Date(value).toLocaleString('ru-RU');
 }
@@ -88,19 +93,19 @@ export function TrainingHistoryPanel({ role }: { role: 'teacher' | 'student' }) 
   }
 
   return (
-    <section aria-label="История обучения">
-      <Group justify="space-between"><Title order={2}>История обучения</Title><Button variant="subtle" onClick={() => void load()}>Обновить</Button></Group>
-      {error && <Alert color="red" mt="sm">{error}</Alert>}
-      {!history ? <Text mt="sm">Загружаем историю…</Text> : (
+    <section className="training-history" aria-label="История обучения" aria-busy={!history || Boolean(busyId)}>
+      <Group className="history-header" justify="space-between"><Title order={2}>История обучения</Title><Button variant="subtle" onClick={() => void load()}>Обновить</Button></Group>
+      {error && <Alert color="red" role="alert" mt="sm">{error}</Alert>}
+      {!history ? <Text mt="sm" role="status" aria-live="polite">Загружаем историю…</Text> : (
         <Stack mt="md">
           <Text>Назначено: {history.summary.assigned}. Оценено: {history.summary.completed}. Средний результат: {history.summary.averagePercent === null ? '—' : `${history.summary.averagePercent.toFixed(1)}%`}.</Text>
           {history.attempts.length === 0 && <Text c="dimmed">Попыток пока нет.</Text>}
           {history.attempts.map((attempt) => (
-            <Paper key={attempt.sessionId} withBorder p="md">
-              <Group justify="space-between" align="flex-start">
+            <Paper className="history-attempt" key={attempt.sessionId} withBorder p="md">
+              <Group className="history-attempt__header" justify="space-between" align="flex-start">
                 <div><Text fw={700}>{attempt.scenarioTitle} · версия {attempt.scenarioVersion}</Text>
                   <Text size="sm">{attempt.scenarioProfile}</Text>
-                  <Text size="sm" c="dimmed">{role === 'teacher' && `${attempt.studentName ?? 'Без обучающегося'} · `}{dateTime(attempt.createdAt)} · {attempt.state}</Text></div>
+                  <Text size="sm" c="dimmed">{role === 'teacher' && `${attempt.studentName ?? 'Без обучающегося'} · `}{dateTime(attempt.createdAt)} · {sessionStateLabels[attempt.state] ?? attempt.state}</Text></div>
                 {attempt.originalReport && <Badge color={attempt.originalReport.passed ? 'teal' : 'orange'}>{attempt.effectiveScore} / {attempt.originalReport.maxScore}</Badge>}
               </Group>
               <Text size="sm" mt="xs">Время: {attempt.elapsedSeconds === null ? 'ещё не завершено' : `${attempt.elapsedSeconds} с`} / норматив {attempt.timeLimitSeconds} с{attempt.exceededLimit ? ' · превышен' : ''}</Text>
@@ -126,7 +131,7 @@ export function TrainingHistoryPanel({ role }: { role: 'teacher' | 'student' }) 
                       setComment((current) => ({ ...current, [attempt.sessionId]: value })); }} />
                   <Button size="xs" variant="light" disabled={!comment[attempt.sessionId]?.trim()} loading={busyId === attempt.sessionId}
                     onClick={() => void send(attempt.sessionId, 'comments', { text: comment[attempt.sessionId] })}>Добавить комментарий</Button>
-                  {attempt.originalReport && <Group align="end">
+                  {attempt.originalReport && <Group className="history-correction" align="end">
                     <NumberInput label="Экспертная оценка" min={0} max={attempt.originalReport.maxScore} value={newScore[attempt.sessionId] ?? ''}
                       onChange={(value) => setNewScore((current) => ({ ...current, [attempt.sessionId]: value }))} />
                     <Textarea label="Причина правки" value={reason[attempt.sessionId] ?? ''}

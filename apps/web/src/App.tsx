@@ -11,7 +11,9 @@ import { NotFoundPage } from './pages/NotFoundPage';
 
 function Protected({ role, children }: { role: CurrentUser['role']; children: React.ReactNode }) {
   const { status, user } = useAuthSession();
-  if (status === 'loading') return <div role="status">Проверяем сессию…</div>;
+  if (status === 'loading') {
+    return <div className="route-loading" role="status" aria-live="polite">Проверяем сессию…</div>;
+  }
   if (status === 'anonymous') return <Navigate to="/login" replace />;
   if (user.role !== role) return <Navigate to={pathForRole(user.role)} replace />;
   return children;

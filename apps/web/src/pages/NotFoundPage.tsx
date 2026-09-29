@@ -10,7 +10,7 @@ export function NotFoundPage() {
           <IconRouteOff size={27} stroke={1.7} />
         </ThemeIcon>
         <Title order={1}>Страница не найдена</Title>
-        <Button component={Link} to="/login" variant="light">К выбору роли</Button>
+        <Button component={Link} to="/login" variant="light">К странице входа</Button>
       </Stack>
     </Paper>
   );
