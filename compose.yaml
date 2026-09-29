@@ -108,6 +108,7 @@ services:
       RTP_LISTEN_ADDR: "0.0.0.0"
       RTP_PORT: "18000"
       RTP_PORT_END: "18099"
+      MEDIA_MAX_CALLS: ${MEDIA_MAX_CALLS:-32}
       RTP_PUBLIC_HOST: media
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORE_BASE_URL: http://core:8080

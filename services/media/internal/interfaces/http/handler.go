@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -148,7 +148,7 @@ func (h *Handler) mapError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrCallExists):
 		writeErr(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, domain.ErrCapacityExhausted):
-		writeErr(w, http.StatusServiceUnavailable, "capacity_exhausted", "no RTP ports available")
+		writeErr(w, http.StatusServiceUnavailable, "capacity_exhausted", "media call capacity exhausted")
 	case errors.Is(err, domain.ErrARIUnavailable):
 		writeErr(w, http.StatusServiceUnavailable, "ari_unavailable", err.Error())
 	default:

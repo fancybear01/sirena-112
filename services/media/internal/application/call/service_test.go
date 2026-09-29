@@ -95,6 +95,28 @@ func (f *fakeCore) Publish(ctx context.Context, event domain.Event) error {
 	return nil
 }
 
+func TestCapacityRejectsBeforeARIAndReleasesAfterHangup(t *testing.T) {
+	ast := &fakeAsterisk{}
+	svc := call.NewService(ast, &fakeCore{}, slog.Default())
+	svc.SetMaxCalls(1)
+	first, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s1", AISessionID: "ai1", SIPAddress: "PJSIP/smoke-out"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s2", AISessionID: "ai2", SIPAddress: "PJSIP/smoke-out"}); !errors.Is(err, domain.ErrCapacityExhausted) {
+		t.Fatalf("expected explicit capacity error, got %v", err)
+	}
+	if ast.started != 1 {
+		t.Fatalf("overloaded call reached ARI: %d starts", ast.started)
+	}
+	if _, err := svc.Hangup(context.Background(), call.HangupCommand{CallID: first.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Start(context.Background(), call.StartCommand{SessionID: "s2", AISessionID: "ai2", SIPAddress: "PJSIP/smoke-out"}); err != nil {
+		t.Fatalf("slot not reusable: %v", err)
+	}
+}
+
 func TestStartHangupPublishesEvents(t *testing.T) {
 	ast := &fakeAsterisk{}
 	core := &fakeCore{}

@@ -56,6 +56,7 @@ go run ./cmd/media
 | `ARI_USERNAME` / `ARI_PASSWORD` | ARI user (not SIP 1001) |
 | `ARI_APP` | Stasis app name (`sirena-media`) |
 | `RTP_LISTEN_ADDR` / `RTP_PORT` / `RTP_PORT_END` | UDP host and inclusive port range for externalMedia |
+| `MEDIA_MAX_CALLS` | Maximum admitted calls, including starts and calls awaiting cleanup; default is 32 or the RTP port range size, whichever is smaller |
 | `RTP_PUBLIC_HOST` | host Asterisk dials for RTP (`media` in compose) |
 | `MEDIA_MODE` | `echo` (default) / `ai` |
 | `AI_BASE_URL` | WS base URL, e.g. `ws://127.0.0.1:8090` |
