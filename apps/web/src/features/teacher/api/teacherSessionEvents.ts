@@ -19,10 +19,11 @@ type SessionEventOptions = {
   maxReconnectDelayMs?: number;
 };
 
-function websocketUrl(baseUrl: string, sessionId: string) {
+function websocketUrl(baseUrl: string, sessionId: string, afterEventId?: string) {
   const origin = baseUrl || window.location.origin;
   const url = new URL(`/ws/sessions/${encodeURIComponent(sessionId)}/events`, origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (afterEventId) url.searchParams.set('afterEventId', afterEventId);
   return url.toString();
 }
 
@@ -49,6 +50,7 @@ export function createTeacherSessionEvents(
       let reconnectAttempt = 0;
       let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       let socket: SessionSocket | null = null;
+      let lastEventId: string | undefined;
 
       const scheduleReconnect = () => {
         if (stopped || reconnectTimer !== null) return;
@@ -70,7 +72,7 @@ export function createTeacherSessionEvents(
           scheduleReconnect();
         };
         try {
-          const connectedSocket = createSocket(websocketUrl(config.baseUrl, sessionId));
+          const connectedSocket = createSocket(websocketUrl(config.baseUrl, sessionId, lastEventId));
           socket = connectedSocket;
           connectedSocket.onopen = () => {
             reconnectAttempt = 0;
@@ -82,6 +84,7 @@ export function createTeacherSessionEvents(
               const event = normalizeSessionEvent(JSON.parse(data));
               if (event.sessionId !== sessionId || seenEventIds.has(event.eventId)) return;
               seenEventIds.add(event.eventId);
+              lastEventId = event.eventId;
               onEvent(event);
             } catch {
               // Ignore a malformed envelope and keep the live connection usable.
