@@ -83,6 +83,9 @@ describe('teacher session event stream', () => {
     expect(states.at(-1)).toBe('reconnecting');
     await vi.advanceTimersByTimeAsync(50);
     expect(sockets).toHaveLength(2);
+    expect(urls[1]).toBe(
+      `wss://core.example.test/ws/sessions/${sessionId}/events?afterEventId=${event.eventId}`,
+    );
 
     sockets[1].open();
     sockets[1].message(event);

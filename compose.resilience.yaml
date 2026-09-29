@@ -1,0 +1,51 @@
+services:
+  # Второй Core использует тот же образ и ту же PostgreSQL. Порт хоста ему не
+  # нужен: трафик Web идёт через локальный gateway ниже.
+  core-2:
+    extends:
+      file: compose.yaml
+      service: core
+    build: null
+    ports: !reset []
+    restart: "on-failure:5"
+
+  core-gateway:
+    image: sirena-112-web:2026.09.28
+    volumes:
+      - ./infra/core-gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      core:
+        condition: service_healthy
+      core-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    restart: "on-failure:5"
+
+  # В resilience-профиле браузер ходит только через gateway с двумя Core.
+  web:
+    volumes:
+      - ./apps/web/nginx.resilience.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      core-gateway:
+        condition: service_healthy
+
+  monitor:
+    environment:
+      CORE_STATUS_URL: http://core-gateway:8080/actuator/health/readiness
+      CORE_PRIMARY_STATUS_URL: http://core:8080/actuator/health/readiness
+      CORE_SECONDARY_STATUS_URL: http://core-2:8080/actuator/health/readiness
+      MONITOR_RECOVERY_FAILURE_THRESHOLD: "3"
+    depends_on:
+      core-gateway:
+        condition: service_healthy
+      core-2:
+        condition: service_healthy

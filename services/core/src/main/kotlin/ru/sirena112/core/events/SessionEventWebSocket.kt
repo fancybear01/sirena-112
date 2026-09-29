@@ -48,8 +48,14 @@ class SessionEventWebSocketHandler(
 
         try {
             val history = events.findBySessionId(sessionId)
+            val cursor = afterEventId(session)
+            val cursorIndex = cursor?.let { id -> history.indexOfLast { it.eventId == id } } ?: -1
+            // An unknown cursor falls back to the full replay. The Web client
+            // deduplicates by eventId, so this is safer than silently skipping
+            // events after a stale or foreign cursor.
+            val replay = if (cursor == null || cursorIndex < 0) history else history.drop(cursorIndex + 1)
             synchronized(sendLock) {
-                history.forEach { send(session, it) }
+                replay.forEach { send(session, it) }
                 val replayedIds = history.mapTo(mutableSetOf()) { it.eventId }
                 pending.filterNot { it.eventId in replayedIds }.forEach { send(session, it) }
                 pending.clear()
@@ -85,6 +91,11 @@ class SessionEventWebSocketHandler(
         ?.removeSuffix("/events")
         ?.takeIf { it.isNotBlank() }
         ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+
+    private fun afterEventId(session: WebSocketSession): UUID? = session.uri?.let { uri ->
+        org.springframework.web.util.UriComponentsBuilder.fromUri(uri).build().queryParams
+            .getFirst("afterEventId")
+    }?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 }
 
 @Configuration

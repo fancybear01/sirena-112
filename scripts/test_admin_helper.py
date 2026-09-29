@@ -45,6 +45,30 @@ class AdminHelperTest(unittest.TestCase):
         self.assertTrue(all(item["status"] == "DOWN" for item in payload["services"]))
         self.assertEqual("monitor", payload["errors"][0]["component"])
 
+    def test_failed_automatic_recovery_is_reported_to_admin(self):
+        def alerting_open(_request, timeout):
+            self.assertEqual(4, timeout)
+            return JsonResponse(json.dumps({
+                "status": "DOWN",
+                "checks": [
+                    {"name": name, "status": "UP"} for name in
+                    ("core", "ai", "media", "postgres", "asterisk")
+                ],
+                "alerts": [{
+                    "component": "core-secondary",
+                    "recovery": "FAILED",
+                    "message": "core-secondary: автоматическое восстановление не подтверждено.",
+                }],
+            }, ensure_ascii=False).encode())
+
+        payload = build_status("http://127.0.0.1:8099/status", FixedMetrics(), alerting_open)
+
+        self.assertIn(
+            {"component": "core-secondary/recovery",
+             "message": "core-secondary: автоматическое восстановление не подтверждено."},
+            payload["errors"],
+        )
+
     def test_non_admin_session_is_forbidden(self):
         def teacher_open(request, timeout):
             self.assertIn("/api/auth/me", request.full_url)
