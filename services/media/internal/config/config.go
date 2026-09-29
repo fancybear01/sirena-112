@@ -23,6 +23,7 @@ type Config struct {
 	RTPPort       int
 	RTPPortEnd    int
 	RTPPublicHost string
+	MaxCalls      int
 
 	CoreBaseURL             string
 	LogLevel                string
@@ -59,6 +60,10 @@ func Load() (*Config, error) {
 	cfg.RTPPortEnd, err = strconv.Atoi(getEnv("RTP_PORT_END", strconv.Itoa(port)))
 	if err != nil {
 		return nil, fmt.Errorf("RTP_PORT_END: %w", err)
+	}
+	cfg.MaxCalls, err = strconv.Atoi(getEnv("MEDIA_MAX_CALLS", strconv.Itoa(min(32, cfg.RTPPortEnd-cfg.RTPPort+1))))
+	if err != nil {
+		return nil, fmt.Errorf("MEDIA_MAX_CALLS: %w", err)
 	}
 	cfg.RecordingMaxSeconds, err = strconv.Atoi(getEnv("MEDIA_RECORDING_MAX_SECONDS", "900"))
 	if err != nil {
@@ -118,6 +123,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RTPPortEnd < c.RTPPort || c.RTPPortEnd > 65535 {
 		return fmt.Errorf("RTP_PORT_END must be between RTP_PORT and 65535")
+	}
+	if c.MaxCalls < 1 || c.MaxCalls > c.RTPPortEnd-c.RTPPort+1 {
+		return fmt.Errorf("MEDIA_MAX_CALLS must be between 1 and the RTP port range size")
 	}
 	if c.RTPPublicHost == "" {
 		return fmt.Errorf("RTP_PUBLIC_HOST is required")

@@ -8,6 +8,6 @@ var (
 	ErrCallExists        = errors.New("call already exists for session")
 	ErrInvalidArgument   = errors.New("invalid argument")
 	ErrARIUnavailable    = errors.New("ari unavailable")
-	ErrCapacityExhausted = errors.New("no RTP ports available")
+	ErrCapacityExhausted = errors.New("media call capacity exhausted")
 	ErrNotImplemented    = errors.New("not implemented")
 )

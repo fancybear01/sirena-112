@@ -35,9 +35,17 @@ type Service struct {
 
 	mu        sync.RWMutex
 	closing   bool
+	maxCalls  int
 	byID      map[string]*runtime
 	bySession map[string]string
 	byChannel map[string]string
+}
+
+// SetMaxCalls bounds admitted calls, including calls still starting or awaiting cleanup.
+func (s *Service) SetMaxCalls(limit int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maxCalls = limit
 }
 
 type runtime struct {
@@ -135,6 +143,10 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Call, er
 	if _, exists := s.bySession[cmd.SessionID]; exists {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("%w: %s", domain.ErrCallExists, cmd.SessionID)
+	}
+	if s.maxCalls > 0 && len(s.byID) >= s.maxCalls {
+		s.mu.Unlock()
+		return nil, domain.ErrCapacityExhausted
 	}
 	s.byID[callID] = rt
 	s.bySession[cmd.SessionID] = callID

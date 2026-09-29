@@ -13,6 +13,7 @@ func TestValidateRequiresARICredentials(t *testing.T) {
 		ARIBaseURL:    "http://127.0.0.1:8088/ari",
 		RTPPort:       18000,
 		RTPPortEnd:    18000,
+		MaxCalls:      1,
 		RTPPublicHost: "127.0.0.1",
 	}
 	err := cfg.Validate()
@@ -32,7 +33,7 @@ func TestValidateRequiresARICredentials(t *testing.T) {
 
 func TestValidateARIURL(t *testing.T) {
 	for _, base := range []string{"localhost:8088", "ftp://localhost/ari", "http://user:secret@localhost/ari", "http://localhost/ari?api_key=secret"} {
-		cfg := &config.Config{HTTPAddr: ":8091", ARIBaseURL: base, ARIUsername: "media", ARIPassword: "secret", RTPPort: 18000, RTPPortEnd: 18000, RTPPublicHost: "localhost"}
+		cfg := &config.Config{HTTPAddr: ":8091", ARIBaseURL: base, ARIUsername: "media", ARIPassword: "secret", RTPPort: 18000, RTPPortEnd: 18000, MaxCalls: 1, RTPPublicHost: "localhost"}
 		err := cfg.Validate()
 		if err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatalf("URL validation leaked credentials or accepted invalid URL: %v", err)
@@ -49,6 +50,14 @@ func TestPortRangeConfiguration(t *testing.T) {
 	if err != nil || cfg.RTPPortEnd != 18099 {
 		t.Fatalf("range: %+v %v", cfg, err)
 	}
+	if cfg.MaxCalls != 32 {
+		t.Fatalf("default call limit = %d", cfg.MaxCalls)
+	}
+	t.Setenv("MEDIA_MAX_CALLS", "101")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("accepted call limit larger than RTP range")
+	}
+	t.Setenv("MEDIA_MAX_CALLS", "20")
 	for _, end := range []string{"17999", "65536", "-1", "0", "bad"} {
 		t.Setenv("RTP_PORT_END", end)
 		if _, err := config.Load(); err == nil {
@@ -85,10 +94,16 @@ func TestRecordingRequiresIsolatedAuthenticatedCore(t *testing.T) {
 	t.Setenv("MEDIA_MODE", "ai")
 	t.Setenv("MEDIA_RECORDINGS_DIR", t.TempDir())
 	t.Setenv("AI_BASE_URL", "ws://127.0.0.1:8090")
-	if _, err := config.Load(); err == nil { t.Fatal("recording accepted without Core") }
+	if _, err := config.Load(); err == nil {
+		t.Fatal("recording accepted without Core")
+	}
 	t.Setenv("CORE_BASE_URL", "http://127.0.0.1:8080")
 	t.Setenv("CORE_MEDIA_SERVICE_TOKEN", "0123456789abcdef0123456789abcdef")
-	if _, err := config.Load(); err == nil { t.Fatal("recording accepted without group auth") }
+	if _, err := config.Load(); err == nil {
+		t.Fatal("recording accepted without group auth")
+	}
 	t.Setenv("CORE_AUTH_ENABLED", "true")
-	if _, err := config.Load(); err != nil { t.Fatal(err) }
+	if _, err := config.Load(); err != nil {
+		t.Fatal(err)
+	}
 }

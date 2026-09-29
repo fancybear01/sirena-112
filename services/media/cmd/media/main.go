@@ -61,6 +61,7 @@ func main() {
 		publisher = httpPublisher
 	}
 	calls := call.NewService(ariClient, publisher, log)
+	calls.SetMaxCalls(cfg.MaxCalls)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
